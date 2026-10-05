@@ -1,0 +1,13 @@
+{
+  "name": "hochzeit-foto-upload",
+  "private": true,
+  "description": "QR-Code-Fotoupload für Hochzeitsgäste über Google Apps Script und Google Drive",
+  "scripts": {
+    "test": "node test/run-tests.js",
+    "push": "clasp push",
+    "deploy": "clasp deploy --deploymentId $DEPLOYMENT_ID --description \"update\""
+  },
+  "devDependencies": {
+    "@google/clasp": "^2.4.2"
+  }
+}

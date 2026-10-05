@@ -1,0 +1,910 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<base target="_top">
+<meta charset="utf-8">
+<style>
+  :root {
+    --bg: #faf7f2;
+    --card: #ffffff;
+    --ink: #2b2622;
+    --muted: #5b524a;
+    --line: #e7dfd4;
+    --accent: #7a5c3e;
+    --accent-ink: #ffffff;
+    --ok: #2f6b3a;
+    --err: #a3352b;
+    --bar: #c9a77c;
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; }
+  body {
+    background: var(--bg);
+    color: var(--ink);
+    font: 17px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+    -webkit-text-size-adjust: 100%;
+  }
+  main {
+    max-width: 34rem;
+    margin: 0 auto;
+    padding: 28px 16px calc(40px + env(safe-area-inset-bottom));
+  }
+  header { text-align: center; margin-bottom: 24px; }
+  .eyebrow {
+    margin: 0 0 6px;
+    font-size: 14px;
+    letter-spacing: .12em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  h1 {
+    margin: 0;
+    font: 600 30px/1.2 Georgia, "Times New Roman", serif;
+  }
+  .lead { margin: 10px 0 0; color: var(--muted); }
+
+  .pick {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    min-height: 64px;
+    padding: 14px 20px;
+    border: 0;
+    border-radius: 14px;
+    background: var(--accent);
+    color: var(--accent-ink);
+    font-family: inherit;
+    font-size: 19px;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .pick:active { transform: scale(.99); }
+  .pick:focus-visible { outline: 3px solid var(--ink); outline-offset: 3px; }
+  #file { position: absolute; width: 1px; height: 1px; opacity: 0; pointer-events: none; }
+
+  .field { margin: 18px 0 0; }
+  .field label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 16px; }
+  .field input {
+    width: 100%;
+    min-height: 50px;
+    padding: 10px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+    color: var(--ink);
+    font-family: inherit;
+    font-size: 17px; /* >= 16px prevents iOS zoom on focus */
+    line-height: 1.3;
+  }
+  .field input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
+
+  .hint { margin: 14px 0 0; font-size: 16px; color: var(--muted); }
+  .notice {
+    margin: 16px 0 0;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #fff4e0;
+    color: #6b4a12;
+    font-size: 16px;
+  }
+  .notice[hidden] { display: none; }
+
+  .summary { margin: 26px 0 8px; font-weight: 600; }
+  .summary:empty { display: none; }
+  .thanks {
+    margin: 12px 0 0;
+    padding: 14px 16px;
+    border-radius: 12px;
+    background: #e9f3ea;
+    color: var(--ok);
+    font-size: 16px;
+  }
+  .thanks[hidden] { display: none; }
+
+  ul.files { list-style: none; margin: 0; padding: 0; }
+  .item {
+    margin: 10px 0 0;
+    padding: 12px 14px;
+    border: 1px solid var(--line);
+    border-radius: 12px;
+    background: var(--card);
+  }
+  .row { display: flex; gap: 10px; align-items: baseline; justify-content: space-between; }
+  .name {
+    min-width: 0;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    font-size: 16px;
+  }
+  .size { flex: none; font-size: 15px; color: var(--muted); }
+  .bar {
+    height: 8px;
+    margin: 10px 0 8px;
+    border-radius: 4px;
+    background: var(--line);
+    overflow: hidden;
+  }
+  .bar > span { display: block; height: 100%; width: 0; background: var(--bar); transition: width .3s; }
+  .item.done .bar > span { background: var(--ok); }
+  .item.error .bar > span { background: var(--err); }
+  .status { font-size: 16px; color: var(--muted); }
+  .item.done .status { color: var(--ok); }
+  .item.error .status { color: var(--err); }
+  .retry {
+    display: none;
+    margin-top: 10px;
+    min-height: 48px;
+    padding: 10px 18px;
+    border: 1px solid var(--accent);
+    border-radius: 12px;
+    background: transparent;
+    color: var(--accent);
+    font-family: inherit;
+    font-size: 16px;
+    font-weight: 600;
+    line-height: 1.2;
+    cursor: pointer;
+  }
+  .item.error.retryable .retry { display: inline-block; }
+
+  .privacy { margin: 28px 0 0; font-size: 15px; color: var(--muted); text-align: center; }
+  #log {
+    margin: 24px 0 0;
+    padding: 10px;
+    max-height: 40vh;
+    overflow: auto;
+    border-radius: 8px;
+    background: #1f1b18;
+    color: #e8e1d7;
+    font: 12px/1.4 ui-monospace, Menlo, Consolas, monospace;
+    white-space: pre-wrap;
+  }
+  #log[hidden] { display: none; }
+</style>
+</head>
+<body data-code="<?= code ?>" data-debug="<?= debug ? '1' : '' ?>">
+<main>
+  <header>
+    <p class="eyebrow"><?= coupleNames ?></p>
+    <h1>Teilt eure Fotos und Videos</h1>
+    <p class="lead">Wir freuen uns über jeden Moment, den ihr festgehalten habt.</p>
+  </header>
+
+  <label for="file" class="pick" id="pick" role="button" tabindex="0">Fotos &amp; Videos auswählen</label>
+  <input type="file" id="file" accept="image/*,video/*" multiple>
+
+  <div class="field">
+    <label for="guest">Dein Name (optional)</label>
+    <input type="text" id="guest" maxlength="40" autocomplete="name" autocapitalize="words" enterkeyhint="done">
+  </div>
+
+  <p class="hint">Bitte lasst diese Seite geöffnet, bis alles fertig ist. Kein Empfang? Ihr könnt auch später hochladen, der Link gilt bis <?= closingDateText ?>.</p>
+
+  <p class="notice" id="notice" role="status" aria-live="polite" hidden></p>
+
+  <p class="summary" id="summary" aria-live="polite"></p>
+  <p class="thanks" id="thanks" hidden>Danke! Eure Dateien sind angekommen. Noch mehr? Einfach wieder auswählen.</p>
+  <ul class="files" id="files"></ul>
+
+  <p class="privacy">Eure Dateien landen in einem privaten Ordner des Brautpaars. Niemand sonst sieht sie.</p>
+  <pre id="log" hidden></pre>
+</main>
+
+<script>
+(function (global) {
+  'use strict';
+
+  // -------------------------------------------------------------------------
+  // Settings and texts
+  // -------------------------------------------------------------------------
+  var KIB = 1024;
+  var MIB = 1024 * KIB;
+  var MAX_PARALLEL = 2;
+  var MAX_FAILURES = 5;                       // retries per chunk / request
+  var BACKOFF_MS = [1000, 2000, 4000, 8000, 16000];
+  var MIN_DIRECT_CHUNK = 2 * MIB;             // smallest chunk after slowdowns
+  var STALL_MS = 45000;                       // abort a chunk without progress
+  var MAX_SESSION_RESTARTS = 3;
+
+  var TEXT = {
+    waiting: 'Wartet …',
+    starting: 'Wird vorbereitet …',
+    uploading: 'Wird hochgeladen …',
+    done: 'Fertig',
+    retrying: 'Verbindung unterbrochen. Wir versuchen es gleich noch einmal.',
+    offline: 'Keine Verbindung. Es geht automatisch weiter, sobald ihr wieder online seid.',
+    restart: 'Der Upload wird neu gestartet …',
+    preparingPick: 'Bereite Dateien vor … Bei langen Videos kann das einen Moment dauern.',
+    finalNetwork: 'Das hat gerade nicht geklappt. Tippt auf „Erneut versuchen“ oder ladet die Datei später im WLAN hoch.',
+    leaveWarning: 'Es werden noch Dateien hochgeladen. Wirklich verlassen?'
+  };
+
+  var ERROR_TEXT = {
+    CLOSED: 'Der Upload ist beendet.',
+    BAD_CODE: 'Dieser Link ist nicht gültig. Bitte scannt den QR-Code noch einmal.',
+    BAD_TYPE: 'Diese Datei ist kein Foto oder Video.',
+    TOO_LARGE: 'Diese Datei ist zu groß.',
+    EMPTY: 'Diese Datei ist leer.',
+    RATE_LIMIT: 'Gerade ist viel los, wir versuchen es gleich noch einmal.'
+  };
+
+  // Server errors worth retrying automatically.
+  var RETRYABLE = { RATE_LIMIT: true, DRIVE_ERROR: true, NETWORK: true };
+
+  // -------------------------------------------------------------------------
+  // Upload engine (no DOM access; dependencies are injected for testing)
+  // -------------------------------------------------------------------------
+  function UploadError(code, retryable) {
+    this.name = 'UploadError';
+    this.code = code;
+    this.retryable = !!retryable;
+    this.message = ERROR_TEXT[code] || TEXT.finalNetwork;
+  }
+  UploadError.prototype = Object.create(Error.prototype);
+
+  function RestartSession(reason) { this.reason = reason; }
+
+  /** "bytes=0-1234" → 1235, otherwise null. */
+  function parseRangeNext(range) {
+    var m = /^bytes=0-(\d+)$/.exec(String(range || '').trim());
+    return m ? Number(m[1]) + 1 : null;
+  }
+
+  function isVideo(file) {
+    return /^video\//.test(file.type || '') || /\.(mp4|mov|m4v|3gp|webm)$/i.test(file.name || '');
+  }
+
+  /**
+   * deps: callServer(fn, arg) → Promise, xhrPut(url, body, headers, onProgress) → Promise<{status, range}>,
+   *       readBase64(blob) → Promise<string>, sleep(ms), isOnline(), waitOnline() → Promise,
+   *       origin, code, random()
+   */
+  function createEngine(deps) {
+    var random = deps.random || Math.random;
+
+    function timing(bytes, t0) {
+      var ms = Math.max(1, Date.now() - t0);
+      return '(' + ms + ' ms, ' + (bytes / MIB / (ms / 1000)).toFixed(1) + ' MB/s)';
+    }
+
+    function backoff(attempt) {
+      var base = BACKOFF_MS[Math.min(attempt, BACKOFF_MS.length - 1)];
+      return deps.sleep(base + Math.floor(random() * 500));
+    }
+
+    /** Waits before the next attempt. Offline time does not count as a failure. */
+    function pause(item, h, failures) {
+      if (!deps.isOnline()) {
+        h.onStatus(TEXT.offline);
+        return deps.waitOnline().then(function () { return false; });
+      }
+      h.onStatus(TEXT.retrying);
+      return backoff(failures - 1).then(function () { return true; });
+    }
+
+    function openSession(item, h) {
+      var attempt = 0;
+      var t0;
+      function tryOnce() {
+        t0 = Date.now();
+        return Promise.resolve()
+          .then(function () {
+            return deps.callServer('createUploadSession', {
+              code: deps.code,
+              fileName: item.file.name || '',
+              mimeType: item.file.type || '',
+              size: item.file.size,
+              guestName: item.guestName || '',
+              origin: deps.origin
+            });
+          })
+          .catch(function (err) {
+            h.log('createUploadSession network error: ' + (err && err.message || err));
+            return { ok: false, error: 'NETWORK' };
+          })
+          .then(function (res) {
+            if (res && res.ok) {
+              h.log('session ok in ' + (Date.now() - t0) + ' ms, mode=' + res.mode +
+                ', chunk=' + Math.round(res.chunkSize / MIB) + ' MB');
+              return res;
+            }
+            var code = (res && res.error) || 'NETWORK';
+            h.log('createUploadSession error: ' + code);
+            if (!RETRYABLE[code]) throw new UploadError(code, false);
+            var wait;
+            if (!deps.isOnline()) {
+              h.onStatus(TEXT.offline);
+              wait = deps.waitOnline();           // offline time is not a failed attempt
+            } else {
+              if (attempt >= MAX_FAILURES) throw new UploadError('NETWORK', true);
+              attempt++;
+              h.onStatus(code === 'RATE_LIMIT' ? ERROR_TEXT.RATE_LIMIT : TEXT.retrying);
+              // Rate limits clear per minute, so wait a little longer there.
+              wait = backoff(code === 'RATE_LIMIT' ? attempt : attempt - 1);
+            }
+            return wait.then(tryOnce);
+          });
+      }
+      return tryOnce();
+    }
+
+    /** Applies a status/chunk response in direct mode. Returns 'done' | 'next'. */
+    function applyDirectResponse(item, res, sentEnd) {
+      if (res.status === 200 || res.status === 201) {
+        item.confirmed = item.file.size;
+        return 'done';
+      }
+      if (res.status === 308) {
+        var next = parseRangeNext(res.range);
+        if (next !== null) {
+          item.rangeReadable = true;
+          item.confirmed = next;
+        } else if (item.rangeReadable) {
+          item.confirmed = 0;                   // Drive stored nothing yet
+        } else if (sentEnd !== null) {
+          item.confirmed = sentEnd;             // Range not readable: trust our own count
+        }
+        return 'next';
+      }
+      if (res.status === 404 || res.status === 410) throw new RestartSession('expired');
+      // Without a readable Range header we cannot learn Drive's real offset,
+      // so a rejected chunk means our count is off: start a fresh session.
+      if (res.status === 400 && !item.rangeReadable) throw new RestartSession('offset-unknown');
+      return 'fail';
+    }
+
+    function queryDirectStatus(item, h) {
+      var size = item.file.size;
+      return deps.xhrPut(item.session.sessionUrl, null, { 'Content-Range': 'bytes */' + size }, null)
+        .then(function (res) {
+          h.log('status query → ' + res.status + (res.range ? ' ' + res.range : ''));
+          return applyDirectResponse(item, res, null);
+        }, function (err) {
+          h.log('status query failed: ' + (err && err.message || err));
+          return 'fail';
+        });
+    }
+
+    function uploadDirect(item, h, resumed) {
+      var size = item.file.size;
+      var chunk = item.session.chunkSize;
+      var failures = 0;
+
+      function step() {
+        if (item.confirmed >= size) return Promise.resolve();
+        var start = item.confirmed;
+        var end = Math.min(start + chunk, size);
+        h.onStatus(TEXT.uploading);
+        var t0 = Date.now();
+        return deps.xhrPut(
+          item.session.sessionUrl,
+          item.file.slice(start, end),
+          { 'Content-Range': 'bytes ' + start + '-' + (end - 1) + '/' + size },
+          function (loaded) { h.onProgress(start + loaded); }
+        ).then(function (res) {
+          h.log('PUT ' + start + '-' + (end - 1) + ' → ' + res.status + (res.range ? ' ' + res.range : '') +
+            ' ' + timing(end - start, t0));
+          var outcome = applyDirectResponse(item, res, end);
+          if (outcome === 'done') { h.onProgress(size); return; }
+          if (outcome === 'next') { failures = 0; h.onProgress(item.confirmed); return step(); }
+          return recover(false);
+        }, function (err) {
+          if (err instanceof RestartSession) throw err;
+          h.log('PUT ' + start + '-' + (end - 1) + ' failed: ' + (err && err.message || err));
+          return recover(true);
+        });
+      }
+
+      function recover(networkError) {
+        if (networkError && chunk > MIN_DIRECT_CHUNK) chunk = Math.max(MIN_DIRECT_CHUNK, chunk / 2);
+        if (failures >= MAX_FAILURES) return Promise.reject(new UploadError('NETWORK', true));
+        return pause(item, h, failures + 1).then(function (counted) {
+          if (counted) failures++;
+          return resync();
+        });
+      }
+
+      function resync() {
+        return queryDirectStatus(item, h).then(function (outcome) {
+          h.onProgress(item.confirmed);
+          if (outcome === 'done') return;
+          return step();
+        });
+      }
+
+      // After a manual retry the stored offset may be stale: ask Drive first.
+      return resumed ? resync() : step();
+    }
+
+    function uploadProxy(item, h, resumed) {
+      var size = item.file.size;
+      var chunk = item.session.chunkSize;
+      var failures = 0;
+
+      function call(fn, arg) {
+        return Promise.resolve()
+          .then(function () { return deps.callServer(fn, arg); })
+          .catch(function (err) {
+            h.log(fn + ' network error: ' + (err && err.message || err));
+            return { ok: false, error: 'NETWORK' };
+          });
+      }
+
+      function handle(res, label) {
+        if (res && res.ok) {
+          failures = 0;
+          item.confirmed = res.done ? size : res.nextOffset;
+          h.onProgress(item.confirmed);
+          return res.done ? null : step();
+        }
+        var code = (res && res.error) || 'NETWORK';
+        h.log(label + ' error: ' + code);
+        if (code === 'SESSION_EXPIRED' || code === 'WRONG_MODE' || code === 'BAD_REQUEST') {
+          throw new RestartSession(code);
+        }
+        if (!RETRYABLE[code]) throw new UploadError(code, false);
+        if (failures >= MAX_FAILURES) throw new UploadError('NETWORK', true);
+        return pause(item, h, failures + 1).then(function (counted) {
+          if (counted) failures++;
+          return resync();
+        });
+      }
+
+      function resync() {
+        return call('getUploadStatus', {
+          code: deps.code, sessionUrl: item.session.sessionUrl, total: size
+        }).then(function (st) {
+          h.log('getUploadStatus → ' + (st && st.ok ? 'next=' + st.nextOffset : st && st.error));
+          if (st && st.ok) {
+            // Do not reset the failure count here: only a stored chunk counts as progress.
+            item.confirmed = st.done ? size : st.nextOffset;
+            h.onProgress(item.confirmed);
+            return st.done ? null : step();
+          }
+          if (st && (st.error === 'SESSION_EXPIRED' || st.error === 'WRONG_MODE')) {
+            throw new RestartSession(st.error);
+          }
+          if (st && !RETRYABLE[st.error]) throw new UploadError(st.error, false);
+          return step();
+        });
+      }
+
+      // Encode the next chunk while the current one is on its way.
+      var prefetched = null;
+      function encode(start) {
+        if (prefetched && prefetched.start === start) {
+          var p = prefetched.promise;
+          prefetched = null;
+          return p;
+        }
+        return deps.readBase64(item.file.slice(start, Math.min(start + chunk, size)));
+      }
+      function prefetch(start) {
+        if (start >= size) return;
+        var promise = deps.readBase64(item.file.slice(start, Math.min(start + chunk, size)));
+        promise.catch(function () {});
+        prefetched = { start: start, promise: promise };
+      }
+
+      function step() {
+        if (item.confirmed >= size) return Promise.resolve();
+        var start = item.confirmed;
+        var end = Math.min(start + chunk, size);
+        h.onStatus(TEXT.uploading);
+        var t0;
+        return encode(start).then(function (b64) {
+          t0 = Date.now();
+          prefetch(end);
+          // google.script.run reports no progress: creep the bar towards the
+          // chunk end so the page does not look frozen.
+          var ticker = deps.ticker ? deps.ticker(function (elapsed) {
+            var guess = Math.min(0.9, elapsed / 8000) * (end - start);
+            h.onProgress(start + guess);
+          }) : null;
+          var req = call('uploadChunk', {
+            code: deps.code,
+            sessionUrl: item.session.sessionUrl,
+            base64: b64,
+            start: start,
+            total: size,
+            mimeType: item.file.type || ''
+          });
+          return req.then(function (res) {
+            if (ticker) ticker();
+            return res;
+          });
+        }).then(function (res) {
+          h.log('uploadChunk ' + start + '-' + (end - 1) + ' → ' +
+            (res && res.ok ? 'ok next=' + res.nextOffset : (res && res.error)) +
+            ' ' + timing(end - start, t0));
+          if (!(res && res.ok && res.nextOffset === end) && !(res && res.done)) prefetched = null;
+          return handle(res, 'uploadChunk');
+        });
+      }
+
+      return resumed ? resync() : step();
+    }
+
+    /** Uploads one item; resumes from item.session / item.confirmed if present. */
+    function uploadFile(item, h) {
+      var restarts = 0;
+      function attempt() {
+        var resumed = !!item.session;
+        var ready = item.session
+          ? Promise.resolve(item.session)
+          : (h.onStatus(TEXT.starting), openSession(item, h)).then(function (s) {
+              item.session = s;
+              item.confirmed = 0;
+              item.rangeReadable = false;
+              h.onProgress(0);
+              return s;
+            });
+        return ready.then(function (s) {
+          return s.mode === 'proxy' ? uploadProxy(item, h, resumed) : uploadDirect(item, h, resumed);
+        }).catch(function (err) {
+          if (err instanceof RestartSession && restarts < MAX_SESSION_RESTARTS) {
+            restarts++;
+            h.log('restart session: ' + err.reason);
+            h.onStatus(TEXT.restart);
+            item.session = null;
+            item.confirmed = 0;
+            return attempt();
+          }
+          if (err instanceof RestartSession) throw new UploadError('NETWORK', true);
+          if (err instanceof UploadError) throw err;
+          h.log('unexpected: ' + (err && err.message || err));
+          throw new UploadError('NETWORK', true);
+        });
+      }
+      return attempt();
+    }
+
+    return { uploadFile: uploadFile };
+  }
+
+  // Expose internals for the local test suite.
+  global.__weddingUpload = { createEngine: createEngine, parseRangeNext: parseRangeNext,
+    isVideo: isVideo, UploadError: UploadError };
+  if (global.__TEST__) return;
+
+  // -------------------------------------------------------------------------
+  // Browser glue
+  // -------------------------------------------------------------------------
+  var body = document.body;
+  // Hosted outside Google (GitHub Pages): config.js sets UPLOAD_API_URL and the
+  // code comes from the page URL. Inside Apps Script the template fills it in.
+  var API_URL = typeof global.UPLOAD_API_URL === 'string' ? global.UPLOAD_API_URL : '';
+  var query = {};
+  try {
+    new URLSearchParams(global.location.search).forEach(function (v, k) { query[k] = v; });
+  } catch (e) { /* very old browser */ }
+  var CODE = API_URL ? String(query.k || '').trim() : (body.getAttribute('data-code') || '');
+  var DEBUG = API_URL ? query.debug === '1' : body.getAttribute('data-debug') === '1';
+  var logEl = document.getElementById('log');
+  if (DEBUG) logEl.hidden = false;
+
+  function log(msg) {
+    var line = new Date().toISOString().slice(11, 19) + ' ' + msg;
+    if (DEBUG) {
+      logEl.textContent += line + '\n';
+      logEl.scrollTop = logEl.scrollHeight;
+    }
+    if (global.console) console.log('[upload] ' + line);
+  }
+
+  function callServer(fn, arg) {
+    if (API_URL) {
+      // text/plain avoids a CORS preflight; credentials 'omit' keeps Google
+      // cookies out, which is what makes multiple signed-in accounts harmless.
+      return fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ fn: fn, arg: arg }),
+        credentials: 'omit',
+        redirect: 'follow',
+        cache: 'no-store'
+      }).then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      });
+    }
+    return new Promise(function (resolve, reject) {
+      google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](arg);
+    });
+  }
+
+  function xhrPut(url, payload, headers, onProgress) {
+    return new Promise(function (resolve, reject) {
+      var xhr = new XMLHttpRequest();
+      var lastActivity = Date.now();
+      var settled = false;
+      var watchdog = setInterval(function () {
+        if (Date.now() - lastActivity > STALL_MS) {
+          clearInterval(watchdog);
+          if (!settled) { settled = true; xhr.abort(); reject(new Error('stalled')); }
+        }
+      }, 5000);
+      function finish(fn, value) {
+        clearInterval(watchdog);
+        if (settled) return;
+        settled = true;
+        fn(value);
+      }
+      xhr.open('PUT', url, true);
+      Object.keys(headers).forEach(function (k) { xhr.setRequestHeader(k, headers[k]); });
+      if (xhr.upload) {
+        xhr.upload.onprogress = function (e) {
+          lastActivity = Date.now();
+          if (onProgress) onProgress(e.loaded);
+        };
+      }
+      xhr.onload = function () {
+        var range = null;
+        try { range = xhr.getResponseHeader('Range'); } catch (e) { range = null; }
+        finish(resolve, { status: xhr.status, range: range });
+      };
+      xhr.onerror = function () { finish(reject, new Error('network')); };
+      xhr.ontimeout = function () { finish(reject, new Error('timeout')); };
+      xhr.onabort = function () { finish(reject, new Error('abort')); };
+      xhr.send(payload);
+    });
+  }
+
+  function readBase64(blob) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        var s = String(reader.result || '');
+        resolve(s.slice(s.indexOf(',') + 1));
+      };
+      reader.onerror = function () { reject(reader.error || new Error('read')); };
+      reader.readAsDataURL(blob);
+    });
+  }
+
+  var onlineWaiters = [];
+  global.addEventListener('online', function () {
+    var waiters = onlineWaiters;
+    onlineWaiters = [];
+    waiters.forEach(function (fn) { fn(); });
+    retryFailed();
+  });
+
+  var engine = createEngine({
+    callServer: callServer,
+    xhrPut: xhrPut,
+    readBase64: readBase64,
+    sleep: function (ms) { return new Promise(function (r) { setTimeout(r, ms); }); },
+    isOnline: function () { return navigator.onLine !== false; },
+    waitOnline: function () {
+      return new Promise(function (resolve) {
+        onlineWaiters.push(resolve);
+        // Some browsers miss the online event; check again periodically.
+        var timer = setInterval(function () {
+          if (navigator.onLine !== false) { clearInterval(timer); resolve(); }
+        }, 5000);
+      });
+    },
+    origin: global.location.origin,
+    code: CODE,
+    ticker: function (fn) {
+      var started = Date.now();
+      var timer = setInterval(function () { fn(Date.now() - started); }, 400);
+      return function () { clearInterval(timer); };
+    }
+  });
+
+  // ----- UI state -----
+  var items = [];
+  var nextId = 1;
+  var listEl = document.getElementById('files');
+  var summaryEl = document.getElementById('summary');
+  var thanksEl = document.getElementById('thanks');
+  var noticeEl = document.getElementById('notice');
+  var fileInput = document.getElementById('file');
+  var pickEl = document.getElementById('pick');
+  var guestInput = document.getElementById('guest');
+
+  function formatSize(bytes) {
+    if (bytes >= 1024 * MIB) return (bytes / (1024 * MIB)).toFixed(1).replace('.', ',') + ' GB';
+    if (bytes >= MIB) return (bytes / MIB).toFixed(1).replace('.', ',') + ' MB';
+    return Math.max(1, Math.round(bytes / KIB)) + ' KB';
+  }
+
+  function render(item) {
+    var el = item.el;
+    el.className = 'item ' + item.state + (item.retryable ? ' retryable' : '');
+    var total = item.file.size || 1;
+    var pct = Math.min(100, Math.round((item.progress / total) * 100));
+    el.querySelector('.bar > span').style.width = (item.state === 'done' ? 100 : pct) + '%';
+    var status = item.statusText;
+    if (item.state === 'uploading' && item.progress > 0 && status === TEXT.uploading) {
+      status = TEXT.uploading + ' ' + pct + ' %';
+    }
+    el.querySelector('.status').textContent = status;
+  }
+
+  function addFiles(fileList) {
+    var guestName = guestInput.value.trim();
+    Array.prototype.forEach.call(fileList, function (file) {
+      var item = {
+        id: nextId++, file: file, guestName: guestName, state: 'waiting',
+        statusText: TEXT.waiting, progress: 0, retryable: false,
+        session: null, confirmed: 0, rangeReadable: false
+      };
+      var li = document.createElement('li');
+      li.innerHTML = '<div class="row"><span class="name"></span><span class="size"></span></div>' +
+        '<div class="bar"><span></span></div><div class="status"></div>' +
+        '<button type="button" class="retry">Erneut versuchen</button>';
+      li.querySelector('.name').textContent = file.name || 'Datei';
+      li.querySelector('.size').textContent = formatSize(file.size);
+      li.querySelector('.retry').addEventListener('click', function () { retry(item); });
+      item.el = li;
+      listEl.appendChild(li);
+      items.push(item);
+      if (!file.size) {
+        fail(item, new UploadError('EMPTY', false));
+      } else {
+        render(item);
+      }
+    });
+    updateSummary();
+    pump();
+  }
+
+  function fail(item, err) {
+    item.state = 'error';
+    item.retryable = !!err.retryable;
+    item.statusText = err.message;
+    render(item);
+  }
+
+  function start(item) {
+    item.state = 'uploading';
+    item.retryable = false;
+    item.guestName = item.guestName || guestInput.value.trim();
+    render(item);
+    var hooks = {
+      onProgress: function (bytes) {
+        item.progress = Math.max(0, Math.min(bytes, item.file.size));
+        render(item);
+      },
+      onStatus: function (text) { item.statusText = text; render(item); },
+      log: function (msg) { log('#' + item.id + ' ' + msg); }
+    };
+    engine.uploadFile(item, hooks).then(function () {
+      item.state = 'done';
+      item.statusText = TEXT.done;
+      item.progress = item.file.size;
+      item.session = null;
+      render(item);
+    }, function (err) {
+      if (!(err instanceof UploadError)) err = new UploadError('NETWORK', true);
+      log('#' + item.id + ' failed: ' + err.code);
+      if (err.code === 'CLOSED' || err.code === 'BAD_CODE') {
+        showNotice(err.message);
+      }
+      fail(item, err);
+    }).then(function () {
+      updateSummary();
+      pump();
+    });
+  }
+
+  function retry(item) {
+    if (item.state !== 'error' || !item.retryable) return;
+    item.state = 'waiting';
+    item.statusText = TEXT.waiting;
+    render(item);
+    updateSummary();
+    pump();
+  }
+
+  function retryFailed() {
+    items.forEach(function (item) { if (item.state === 'error' && item.retryable) retry(item); });
+  }
+
+  function pump() {
+    var waiting = items.filter(function (i) { return i.state === 'waiting'; })
+      .sort(function (a, b) { return a.file.size - b.file.size; });
+    for (var n = 0; n < waiting.length; n++) {
+      var active = items.filter(function (i) { return i.state === 'uploading'; });
+      if (active.length >= MAX_PARALLEL) break;
+      if (active.some(function (i) { return isVideo(i.file); })) break;
+      if (isVideo(waiting[n].file) && active.length > 0) break;
+      start(waiting[n]);
+    }
+    updateBusy();
+  }
+
+  function updateSummary() {
+    var total = items.length;
+    var done = items.filter(function (i) { return i.state === 'done'; }).length;
+    var open = items.filter(function (i) { return i.state === 'waiting' || i.state === 'uploading'; }).length;
+    var failed = total - done - open;
+    summaryEl.textContent = total ? done + ' von ' + total + ' hochgeladen' +
+      (failed ? ' · ' + failed + ' mit Problem' : '') : '';
+    thanksEl.hidden = !(total > 0 && done === total);
+  }
+
+  // ----- keep the page alive while uploading -----
+  var wakeLock = null;
+  function isBusy() {
+    return items.some(function (i) { return i.state === 'uploading' || i.state === 'waiting'; });
+  }
+  function updateBusy() {
+    if (isBusy()) {
+      if (!wakeLock && navigator.wakeLock && document.visibilityState === 'visible') {
+        navigator.wakeLock.request('screen').then(function (lock) {
+          wakeLock = lock;
+          lock.addEventListener('release', function () { wakeLock = null; });
+        }).catch(function () { /* not allowed in this frame; ignore */ });
+      }
+    } else if (wakeLock) {
+      wakeLock.release().catch(function () {});
+      wakeLock = null;
+    }
+  }
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') updateBusy();
+  });
+  global.addEventListener('beforeunload', function (e) {
+    if (!isBusy()) return;
+    e.preventDefault();
+    e.returnValue = TEXT.leaveWarning;
+    return TEXT.leaveWarning;
+  });
+
+  // ----- notice while iOS prepares picked videos -----
+  var pickPending = false;
+  var noticeTimer = null;
+  function showNotice(text) {
+    noticeEl.textContent = text;
+    noticeEl.hidden = false;
+  }
+  function hidePickNotice() {
+    pickPending = false;
+    clearTimeout(noticeTimer);
+    if (noticeEl.textContent === TEXT.preparingPick) noticeEl.hidden = true;
+  }
+  function onReturnFromPicker() {
+    if (!pickPending) return;
+    showNotice(TEXT.preparingPick);
+    clearTimeout(noticeTimer);
+    noticeTimer = setTimeout(hidePickNotice, 60000);
+  }
+  pickEl.addEventListener('click', function () { pickPending = true; });
+  pickEl.addEventListener('keydown', function (e) {
+    if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); pickPending = true; fileInput.click(); }
+  });
+  global.addEventListener('focus', onReturnFromPicker);
+  document.addEventListener('visibilitychange', function () {
+    if (document.visibilityState === 'visible') onReturnFromPicker();
+  });
+  fileInput.addEventListener('cancel', hidePickNotice);
+  fileInput.addEventListener('change', function () {
+    hidePickNotice();
+    if (fileInput.files && fileInput.files.length) addFiles(fileInput.files);
+    fileInput.value = '';
+  });
+
+  if (!CODE) {
+    showNotice(ERROR_TEXT.BAD_CODE);
+  } else if (API_URL) {
+    // Outside Apps Script nobody has checked the link yet: do it now.
+    callServer('checkAccess', { code: CODE }).then(function (res) {
+      if (res && !res.ok && (res.error === 'CLOSED' || res.error === 'BAD_CODE')) {
+        showNotice(ERROR_TEXT[res.error]);
+      }
+      log('checkAccess: ' + (res && res.ok ? 'ok, mode=' + res.mode : res && res.error));
+    }, function (err) { log('checkAccess failed: ' + (err && err.message)); });
+  }
+  log('ready, origin=' + global.location.origin + (API_URL ? ', api' : ''));
+})(this);
+</script>
+</body>
+</html>
