@@ -1,13 +1,17 @@
 #!/usr/bin/env node
 /*
- * Builds the static upload page for GitHub Pages (Variante B) into dist/.
+ * Builds the static pages for GitHub Pages (Variante B) into dist/:
+ *   dist/index.html          upload page (QR code)
+ *   dist/galerie/index.html  gallery (user name + password, checked by Apps Script)
  *
  *   APPS_SCRIPT_URL=https://script.google.com/macros/s/<ID>/exec node tools/build-pages.js
  *
  * In CI the URL comes from the repository secret APPS_SCRIPT_URL. Source of
- * truth for the page is src/index.html; the texts come from src/Code.gs.
+ * truth for the pages is src/index.html and src/gallery.html; the texts come
+ * from src/Code.gs.
  * Note: the URL is not secret in the published page (the browser must call
- * it). Real secrets (codes, folder ID, Drive token) stay in Apps Script.
+ * it). Real secrets (upload code, gallery login, folder ID, Drive token) stay
+ * in Apps Script Script Properties and are never part of the build.
  */
 'use strict';
 const fs = require('fs');
@@ -36,49 +40,75 @@ function constant(name) {
 const escapeHtml = (s) => s.replace(/[&<>"']/g, (c) =>
   ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c]);
 
+function applyMarkers(html, file, replacements) {
+  for (const [marker, value] of replacements) {
+    if (!html.includes(marker)) fail('Marker fehlt in ' + file + ': ' + marker);
+    html = html.split(marker).join(value);
+  }
+  if (/<\?/.test(html)) fail('Unbekannter Template-Marker in ' + file + '.');
+  return html;
+}
+
+function cspFor(extra) {
+  return [
+    "default-src 'none'",
+    "script-src 'self' 'unsafe-inline'",
+    "style-src 'unsafe-inline'",
+    "img-src 'self' data:" + (extra.img || ''),
+    // Apps Script API (answers via a redirect to script.googleusercontent.com)
+    // and, for the upload page, the direct upload to Drive.
+    'connect-src https://script.google.com https://script.googleusercontent.com' + (extra.connect || ''),
+  ].concat(extra.more || []).concat([
+    "base-uri 'none'",
+    "form-action 'none'",
+  ]).join('; ');
+}
+
+/** Adds security metas, removes the Apps Script base tag, loads config.js first. */
+function finishPage(html, file, title, csp, configSrc) {
+  const head =
+    '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n' +
+    '<meta http-equiv="Content-Security-Policy" content="' + csp + '">\n' +
+    // Keeps codes in the page URL from leaking to other sites.
+    '<meta name="referrer" content="no-referrer">\n' +
+    '<meta name="robots" content="noindex, nofollow">\n' +
+    '<title>' + escapeHtml(title) + '</title>\n';
+  html = html.replace('<base target="_top">\n', '');
+  if (!html.includes('<meta charset="utf-8">\n')) fail('charset-Meta fehlt in ' + file + '.');
+  html = html.replace('<meta charset="utf-8">\n', '<meta charset="utf-8">\n' + head);
+  // config.js must run before the page script.
+  html = html.replace('<script>', '<script src="' + configSrc + '"></script>\n<script>');
+  if (!html.includes('<script src="' + configSrc + '">')) fail('Seitenskript nicht gefunden in ' + file + '.');
+  return html;
+}
+
+const couple = escapeHtml(constant('COUPLE_NAMES'));
+
+// Upload page: /
 let html = fs.readFileSync(path.join(ROOT, 'src/index.html'), 'utf8');
-const replacements = [
+html = applyMarkers(html, 'index.html', [
   ['<?= code ?>', ''],
   ["<?= debug ? '1' : '' ?>", ''],
-  ['<?= coupleNames ?>', escapeHtml(constant('COUPLE_NAMES'))],
+  ['<?= coupleNames ?>', couple],
   ['<?= closingDateText ?>', escapeHtml(constant('CLOSING_DATE_TEXT'))],
-];
-for (const [marker, value] of replacements) {
-  if (!html.includes(marker)) fail('Marker fehlt in index.html: ' + marker);
-  html = html.split(marker).join(value);
-}
-if (/<\?/.test(html)) fail('Unbekannter Template-Marker in index.html.');
+]);
+html = finishPage(html, 'index.html', constant('PAGE_TITLE') + ' – ' + constant('COUPLE_NAMES'),
+  cspFor({ connect: ' https://www.googleapis.com' }), 'config.js');
 
-const title = escapeHtml(constant('PAGE_TITLE') + ' – ' + constant('COUPLE_NAMES'));
-const csp = [
-  "default-src 'none'",
-  "script-src 'self' 'unsafe-inline'",
-  "style-src 'unsafe-inline'",
-  "img-src 'self' data:",
-  // Apps Script API (answers via a redirect to script.googleusercontent.com)
-  // and the direct upload to Drive.
-  'connect-src https://script.google.com https://script.googleusercontent.com https://www.googleapis.com',
-  "base-uri 'none'",
-  "form-action 'none'",
-].join('; ');
-const head =
-  '<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">\n' +
-  '<meta http-equiv="Content-Security-Policy" content="' + csp + '">\n' +
-  // Keeps the access code in the page URL from leaking to other sites.
-  '<meta name="referrer" content="no-referrer">\n' +
-  '<meta name="robots" content="noindex, nofollow">\n' +
-  '<title>' + title + '</title>\n';
-html = html.replace('<base target="_top">\n', '');
-html = html.replace('<meta charset="utf-8">\n', '<meta charset="utf-8">\n' + head);
-// config.js must run before the page script.
-html = html.replace('<script>', '<script src="config.js"></script>\n<script>');
-if (!html.includes('<script src="config.js">')) fail('Seitenskript nicht gefunden.');
+// Gallery: /galerie/ (login against Apps Script; videos play from blob: URLs)
+let gallery = fs.readFileSync(path.join(ROOT, 'src/gallery.html'), 'utf8');
+gallery = applyMarkers(gallery, 'gallery.html', [['<?= coupleNames ?>', couple]]);
+gallery = finishPage(gallery, 'gallery.html', constant('GALLERY_TITLE') + ' – ' + constant('COUPLE_NAMES'),
+  cspFor({ img: ' blob:', more: ['media-src blob:'] }), '../config.js');
 
 fs.rmSync(OUT, { recursive: true, force: true });
 fs.mkdirSync(OUT, { recursive: true });
 fs.writeFileSync(path.join(OUT, 'index.html'), html);
+fs.mkdirSync(path.join(OUT, 'galerie'), { recursive: true });
+fs.writeFileSync(path.join(OUT, 'galerie', 'index.html'), gallery);
 fs.writeFileSync(path.join(OUT, 'config.js'),
   '// Generated by tools/build-pages.js\nwindow.UPLOAD_API_URL = ' + JSON.stringify(apiUrl) + ';\n');
 fs.writeFileSync(path.join(OUT, '.nojekyll'), '');
 fs.writeFileSync(path.join(OUT, 'robots.txt'), 'User-agent: *\nDisallow: /\n');
-console.log('build-pages: dist/ erstellt (' + html.length + ' Bytes HTML).');
+console.log('build-pages: dist/ erstellt (Upload ' + html.length + ' Bytes, Galerie ' +
+  gallery.length + ' Bytes HTML).');

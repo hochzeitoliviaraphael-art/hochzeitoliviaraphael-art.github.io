@@ -33,11 +33,12 @@
 
   /* Login */
   .login { max-width: 24rem; margin: 8px auto 0; }
-  .login label { display: block; margin-bottom: 6px; font-weight: 600; font-size: 16px; }
+  .login label { display: block; margin: 14px 0 6px; font-weight: 600; font-size: 16px; }
+  .login label:first-child { margin-top: 0; }
   .login input {
     width: 100%; min-height: 52px; padding: 10px 14px;
     border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink);
-    font-family: inherit; font-size: 18px; letter-spacing: .04em;
+    font-family: inherit; font-size: 18px;
   }
   .login input:focus-visible { outline: 3px solid var(--accent); outline-offset: 1px; }
   .btn {
@@ -54,7 +55,8 @@
   .hint { margin: 16px 0 0; color: var(--muted); font-size: 15px; text-align: center; }
 
   /* Grid */
-  .bar { display: flex; justify-content: space-between; align-items: center; margin: 0 0 10px; color: var(--muted); font-size: 15px; }
+  .bar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 12px; margin: 0 0 10px; color: var(--muted); font-size: 15px; }
+  .bar-actions { white-space: nowrap; margin-left: auto; }
   .linkbtn { background: none; border: 0; padding: 8px 0; color: var(--accent); font: inherit; font-size: 15px; cursor: pointer; }
   .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
   @media (min-width: 640px) { .grid { grid-template-columns: repeat(4, 1fr); gap: 6px; } }
@@ -114,17 +116,23 @@
   </header>
 
   <form class="login" id="login" hidden novalidate>
-    <label for="code">Code für die Galerie</label>
-    <input id="code" name="code" type="text" autocomplete="off" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="64" required>
+    <label for="user">Benutzername</label>
+    <input id="user" name="username" type="text" autocomplete="username" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="64" required>
+    <label for="password">Passwort</label>
+    <input id="password" name="password" type="password" autocomplete="current-password" autocapitalize="none" autocorrect="off" spellcheck="false" maxlength="128" required>
     <button class="btn" id="loginBtn" type="submit">Galerie öffnen</button>
     <p class="msg" id="loginMsg" role="alert"></p>
-    <p class="hint">Den Code bekommt ihr vom Brautpaar.</p>
+    <p class="hint">Benutzername und Passwort bekommt ihr vom Brautpaar.</p>
   </form>
 
   <section id="gallery" hidden>
     <div class="bar">
       <span id="count">Neueste zuerst</span>
-      <button class="linkbtn" id="reload" type="button">Aktualisieren</button>
+      <span class="bar-actions">
+        <button class="linkbtn" id="reload" type="button">Aktualisieren</button>
+        <span aria-hidden="true">·</span>
+        <button class="linkbtn" id="logout" type="button">Abmelden</button>
+      </span>
     </div>
     <div class="grid" id="grid"></div>
     <div id="sentinel"></div>
@@ -146,8 +154,6 @@
     <button class="vbtn" id="vnext" type="button" aria-label="Nächstes">›</button>
   </div>
 </div>
-
-<input type="hidden" id="prefill" value="<?= prefill ?>">
 
 <script>
 (function (global) {
@@ -226,8 +232,25 @@
   // ---------------------------------------------------------------- server
   var STORE_KEY = 'hochzeitGalerie';
   var session = null; // {token, expiresAt, maxFileBytes}
+  // Set by config.js on GitHub Pages; inside Apps Script google.script.run is used.
+  var API_URL = global.UPLOAD_API_URL || '';
 
   function run(fn, arg) {
+    if (API_URL) {
+      // text/plain avoids a CORS preflight; credentials 'omit' keeps Google
+      // cookies out, so several signed-in Google accounts do not matter.
+      return fetch(API_URL, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ fn: fn, arg: arg }),
+        credentials: 'omit',
+        redirect: 'follow',
+        cache: 'no-store'
+      }).then(function (res) {
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        return res.json();
+      });
+    }
     return new Promise(function (resolve, reject) {
       google.script.run.withSuccessHandler(resolve).withFailureHandler(reject)[fn](arg);
     });
@@ -274,7 +297,8 @@
 
   // ---------------------------------------------------------------- dom
   function $(id) { return document.getElementById(id); }
-  var loginForm = $('login'), codeInput = $('code'), loginBtn = $('loginBtn'), loginMsg = $('loginMsg');
+  var loginForm = $('login'), userInput = $('user'), passwordInput = $('password');
+  var loginBtn = $('loginBtn'), loginMsg = $('loginMsg');
   var gallerySec = $('gallery'), grid = $('grid'), statusEl = $('status'), countEl = $('count');
   var viewer = $('viewer'), stage = $('stage'), vcount = $('vcount'), vstatus = $('vstatus');
   var vprogress = $('vprogress'), vprev = $('vprev'), vnext = $('vnext'), vsave = $('vsave');
@@ -284,20 +308,22 @@
     gallerySec.hidden = true;
     loginForm.hidden = false;
     loginMsg.textContent = message || '';
-    setTimeout(function () { codeInput.focus(); }, 50);
+    setTimeout(function () { (userInput.value ? passwordInput : userInput).focus(); }, 50);
   }
 
-  function login(code) {
+  function login(user, password) {
     loginBtn.disabled = true;
-    loginMsg.textContent = '';
-    run('openGallery', { code: code }).catch(function () {
+    loginMsg.textContent = 'Anmeldung läuft …';
+    run('openGallery', { user: user, password: password }).catch(function () {
       return { ok: false, message: 'Keine Verbindung. Bitte noch einmal versuchen.' };
     }).then(function (res) {
       loginBtn.disabled = false;
       if (!res || !res.ok) {
+        passwordInput.value = '';
         showLogin((res && res.message) || 'Das hat nicht geklappt.');
         return;
       }
+      passwordInput.value = '';
       saveSession({ token: res.token, expiresAt: res.expiresAt, maxFileBytes: res.maxFileBytes });
       startGallery();
     });
@@ -307,24 +333,22 @@
     clearSession();
     closeViewer();
     resetGrid();
-    // A stored token can be stale (e.g. the code was changed); the code from
-    // the link is tried once before asking the guest.
-    if (prefill && !triedPrefill) {
-      triedPrefill = true;
-      codeInput.value = prefill;
-      gallerySec.hidden = true;
-      loginForm.hidden = false;
-      login(prefill);
-      return;
-    }
-    showLogin(message || 'Bitte gebt den Code noch einmal ein.');
+    showLogin(message || 'Bitte meldet euch noch einmal an.');
   }
 
   loginForm.addEventListener('submit', function (ev) {
     ev.preventDefault();
-    var code = codeInput.value.trim();
-    if (!code) { loginMsg.textContent = 'Bitte den Code eingeben.'; return; }
-    login(code);
+    var user = userInput.value.trim();
+    var password = passwordInput.value;
+    if (!user || !password) { loginMsg.textContent = 'Bitte Benutzername und Passwort eingeben.'; return; }
+    login(user, password);
+  });
+
+  $('logout').addEventListener('click', function () {
+    closeViewer();
+    clearSession();
+    resetGrid();
+    showLogin('Abgemeldet.');
   });
 
   // ---------------------------------------------------------------- grid
@@ -691,19 +715,9 @@
   }, { passive: true });
 
   // ---------------------------------------------------------------- start
-  var prefill = $('prefill').value;
-  var triedPrefill = false;
   session = loadSession();
-  if (session) {
-    startGallery();
-  } else if (prefill) {
-    triedPrefill = true;
-    codeInput.value = prefill;
-    loginForm.hidden = false;
-    login(prefill);
-  } else {
-    showLogin('');
-  }
+  if (session) startGallery();
+  else showLogin('');
 })(this);
 </script>
 </body>

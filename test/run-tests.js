@@ -689,7 +689,8 @@ test('template markers only where expected', () => {
 
 // ----- Gallery -----
 const GALLERY_PROPS = Object.assign({}, BASE_PROPS, {
-  GALLERY_ENABLED: 'true', GALLERY_CODE: 'Galerie-2026x', GALLERY_MAX_FILE_MB: '300',
+  GALLERY_ENABLED: 'true', GALLERY_USER: 'Gaeste', GALLERY_PASSWORD: 'Galerie-2026x',
+  GALLERY_MAX_FILE_MB: '300',
 });
 // google.script.run passes data as JSON both ways
 const viaJson = (b, fn, arg) => JSON.parse(JSON.stringify(b[fn](JSON.parse(JSON.stringify(arg)))));
@@ -715,38 +716,50 @@ function galleryWorld(propsExtra) {
   return { drive, props, b };
 }
 
-function loginToken(b, code) {
-  const res = viaJson(b, 'openGallery', { code: code || GALLERY_PROPS.GALLERY_CODE });
+function loginToken(b) {
+  const res = viaJson(b, 'openGallery', { user: 'gaeste', password: GALLERY_PROPS.GALLERY_PASSWORD });
   assert.strictEqual(res.ok, true, JSON.stringify(res));
   return res.token;
 }
 
-test('gallery: page is closed unless enabled with a long enough code', () => {
+test('gallery: closed unless enabled with user and a long enough password', () => {
   const { b } = galleryWorld({ GALLERY_ENABLED: 'false' });
   assert.match(b.doGet({ parameter: { view: 'galerie' } }).content, /Galerie ist noch geschlossen/);
-  const short = galleryWorld({ GALLERY_CODE: 'abc' }).b;
+  const short = galleryWorld({ GALLERY_PASSWORD: 'abc' }).b;
   assert.match(short.doGet({ parameter: { view: 'galerie' } }).content, /noch geschlossen/);
-  assert.strictEqual(viaJson(short, 'openGallery', { code: 'abc' }).error, 'GALLERY_CLOSED');
+  assert.strictEqual(viaJson(short, 'openGallery', { user: 'gaeste', password: 'abc' }).error, 'GALLERY_CLOSED');
+  const noUser = galleryWorld({ GALLERY_USER: '' }).b;
+  assert.strictEqual(viaJson(noUser, 'openGallery', { user: '', password: 'Galerie-2026x' }).error, 'GALLERY_CLOSED');
+  // the old single-code setting alone does not open anything
+  const old = galleryWorld({ GALLERY_USER: '', GALLERY_PASSWORD: '', GALLERY_CODE: 'Galerie-2026x' }).b;
+  assert.strictEqual(viaJson(old, 'openGallery', { code: 'Galerie-2026x' }).error, 'GALLERY_CLOSED');
 });
 
-test('gallery: page works independently of the upload switch and sanitizes the link code', () => {
+test('gallery: page works independently of the upload switch, no secrets in the link', () => {
   const { b } = galleryWorld({ ENABLED: 'false' });
-  let out = b.doGet({ parameter: { view: 'galerie', g: 'Galerie-2026x' } });
+  const out = b.doGet({ parameter: { view: 'galerie', g: 'Galerie-2026x' } });
   assert.strictEqual(out.content, 'template:gallery');
-  assert.strictEqual(out.template.prefill, 'Galerie-2026x');
-  out = b.doGet({ parameter: { view: 'galerie', g: '"><script>x</script>' } });
-  assert.strictEqual(out.template.prefill, '');
+  assert.strictEqual(out.template.prefill, undefined);
   // upload page still closed
   assert.match(b.doGet({ parameter: { k: 'CODE-1234567' } }).content, /Upload ist beendet/);
 });
 
-test('gallery: wrong code is rejected, right code gives a token, nothing secret returned', () => {
+test('gallery: wrong login is rejected, right login gives a token, nothing secret returned', () => {
   const { b } = galleryWorld();
-  assert.strictEqual(viaJson(b, 'openGallery', { code: 'wrong' }).error, 'BAD_GALLERY_CODE');
-  assert.strictEqual(viaJson(b, 'openGallery', {}).error, 'BAD_GALLERY_CODE');
-  assert.strictEqual(viaJson(b, 'openGallery', { code: 'CODE-1234567' }).error, 'BAD_GALLERY_CODE',
+  const bad = (arg) => viaJson(b, 'openGallery', arg).error;
+  assert.strictEqual(bad({ user: 'gaeste', password: 'wrong' }), 'BAD_LOGIN');
+  assert.strictEqual(bad({ user: 'jemand', password: 'Galerie-2026x' }), 'BAD_LOGIN');
+  assert.strictEqual(bad({ user: 'gaeste', password: 'galerie-2026x' }), 'BAD_LOGIN', 'password is case-sensitive');
+  assert.strictEqual(bad({ password: 'Galerie-2026x' }), 'BAD_LOGIN');
+  assert.strictEqual(bad({ user: 'gaeste' }), 'BAD_LOGIN');
+  assert.strictEqual(bad({}), 'BAD_LOGIN');
+  assert.strictEqual(bad({ code: 'Galerie-2026x' }), 'BAD_LOGIN', 'old single code field is ignored');
+  assert.strictEqual(bad({ user: 'gaeste', password: 'CODE-1234567' }), 'BAD_LOGIN',
     'upload code must not open the gallery');
-  const res = viaJson(b, 'openGallery', { code: ' Galerie-2026x ' });
+  assert.strictEqual(bad({ user: ['gaeste'], password: { x: 1 } }), 'BAD_LOGIN');
+  assert.match(viaJson(b, 'openGallery', { user: 'x', password: 'y' }).message, /Benutzername oder Passwort/);
+  // user name ignores case and spaces (phones capitalize), password only trims
+  const res = viaJson(b, 'openGallery', { user: ' GAESTE ', password: ' Galerie-2026x ' });
   assert.strictEqual(res.ok, true);
   assert.match(res.token, /^v1\.\d+\.[A-Za-z0-9_-]+$/);
   assert.ok(!JSON.stringify(res).includes('Galerie-2026x'));
@@ -756,8 +769,10 @@ test('gallery: wrong code is rejected, right code gives a token, nothing secret 
 
 test('gallery: too many wrong codes lock the login for a while', () => {
   const { b } = galleryWorld();
-  for (let i = 0; i < 30; i++) assert.strictEqual(viaJson(b, 'openGallery', { code: 'guess' + i }).error, 'BAD_GALLERY_CODE');
-  assert.strictEqual(viaJson(b, 'openGallery', { code: 'Galerie-2026x' }).error, 'TOO_MANY_TRIES');
+  for (let i = 0; i < 30; i++) {
+    assert.strictEqual(viaJson(b, 'openGallery', { user: 'gaeste', password: 'guess' + i }).error, 'BAD_LOGIN');
+  }
+  assert.strictEqual(viaJson(b, 'openGallery', { user: 'gaeste', password: 'Galerie-2026x' }).error, 'TOO_MANY_TRIES');
 });
 
 test('gallery: missing, forged, expired and outdated tokens are rejected', () => {
@@ -778,9 +793,14 @@ test('gallery: missing, forged, expired and outdated tokens are rejected', () =>
   const tooLong = b.signGalleryToken_(Date.now() + 90 * 24 * 3600 * 1000);
   assert.strictEqual(viaJson(b, 'listGallery', { token: tooLong }).error, 'BAD_TOKEN');
   assert.strictEqual(viaJson(b, 'listGallery', { token }).ok, true);
-  // changing the code logs everybody out
-  const b2 = loadBackend(drive, Object.assign({}, props, { GALLERY_CODE: 'Neuer-Code-99' }));
+  // changing the password or the user logs everybody out
+  const b2 = loadBackend(drive, Object.assign({}, props, { GALLERY_PASSWORD: 'Neues-Passwort-99' }));
   assert.strictEqual(viaJson(b2, 'listGallery', { token }).error, 'BAD_TOKEN');
+  const b2u = loadBackend(drive, Object.assign({}, props, { GALLERY_USER: 'familie' }));
+  assert.strictEqual(viaJson(b2u, 'listGallery', { token }).error, 'BAD_TOKEN');
+  // only the case of the user name changed: still the same login
+  const b2c = loadBackend(drive, Object.assign({}, props, { GALLERY_USER: 'GAESTE' }));
+  assert.strictEqual(viaJson(b2c, 'listGallery', { token }).ok, true);
   // kill switch
   const b3 = loadBackend(drive, Object.assign({}, props, { GALLERY_ENABLED: 'false' }));
   assert.strictEqual(viaJson(b3, 'listGallery', { token }).error, 'GALLERY_CLOSED');
@@ -908,7 +928,9 @@ test('gallery helpers: sizes, durations, chunk plan', () => {
 test('gallery template: only escaped markers, no external resources', () => {
   const html = fs.readFileSync(path.join(ROOT, 'src/gallery.html'), 'utf8');
   const markers = html.match(/<\?[\s\S]*?\?>/g) || [];
-  assert.deepStrictEqual(markers, ['<?= coupleNames ?>', '<?= prefill ?>']);
+  assert.deepStrictEqual(markers, ['<?= coupleNames ?>']);
+  assert.match(html, /autocomplete="username"/);
+  assert.match(html, /type="password"[^>]*autocomplete="current-password"/);
   assert.ok(!/https?:\/\//.test(html.replace(/<!--[\s\S]*?-->/g, '')), 'no external resources');
   assert.ok(!/innerHTML/.test(html), 'no innerHTML');
 });
@@ -926,7 +948,8 @@ test('doPost: dispatches only whitelisted functions and never throws', () => {
   const b = loadBackend(drive, BASE_PROPS);
   assert.deepStrictEqual(post(b, { fn: 'checkAccess', arg: { code: 'CODE-1234567' } }), { ok: true, mode: 'direct' });
   assert.strictEqual(post(b, { fn: 'checkAccess', arg: { code: 'nope' } }).error, 'BAD_CODE');
-  for (const fn of ['testAuth', 'doGet', 'getProp_', 'openGallery', 'listGallery', 'constructor', '__proto__', 'toString']) {
+  for (const fn of ['testAuth', 'doGet', 'doPost', 'getProp_', 'galleryKey_', 'signGalleryToken_',
+    'constructor', '__proto__', 'toString', 'hasOwnProperty']) {
     assert.strictEqual(post(b, { fn, arg: {} }).error, 'BAD_REQUEST', fn);
   }
   assert.strictEqual(post(b, '{not json').error, 'BAD_REQUEST');
@@ -948,6 +971,25 @@ test('doPost: upload session for the GitHub Pages origin', () => {
     mimeType: 'image/jpeg', size: 1000 } }).error, 'BAD_CODE');
 });
 
+test('doPost: gallery works through the JSON API with user and password', () => {
+  const { drive, b } = galleryWorld();
+  assert.strictEqual(post(b, { fn: 'openGallery', arg: { user: 'gaeste', password: 'nope' } }).error, 'BAD_LOGIN');
+  assert.strictEqual(post(b, { fn: 'listGallery', arg: {} }).error, 'BAD_TOKEN');
+  assert.strictEqual(post(b, { fn: 'getGalleryChunk', arg: { id: 'video-0000001', start: 0 } }).error, 'BAD_TOKEN');
+  const login = post(b, { fn: 'openGallery', arg: { user: 'Gaeste', password: 'Galerie-2026x' } });
+  assert.strictEqual(login.ok, true);
+  const list = post(b, { fn: 'listGallery', arg: { token: login.token } });
+  assert.deepStrictEqual(list.items.map((i) => i.id).sort(), ['evilthumb-001', 'photo-0000001', 'video-0000001']);
+  const thumbs = post(b, { fn: 'getGalleryThumbnails', arg: { token: login.token, ids: ['photo-0000001', 'private-00001'] } });
+  assert.ok(thumbs.thumbs['photo-0000001'].startsWith('data:image/'));
+  assert.strictEqual(thumbs.thumbs['private-00001'], null);
+  const chunk = post(b, { fn: 'getGalleryChunk', arg: { token: login.token, id: 'video-0000001', start: 8 * MIB } });
+  assert.ok(Buffer.from(chunk.base64, 'base64').equals(drive.gfiles.get('video-0000001').data.subarray(8 * MIB, 16 * MIB)));
+  assert.strictEqual(post(b, { fn: 'getGalleryPreview', arg: { token: login.token, id: 'private-00001' } }).error, 'NOT_FOUND');
+  const all = JSON.stringify([login, list, thumbs]);
+  assert.ok(!/Galerie-2026x|SECRET-TOKEN|folder-/.test(all), 'no secrets in API answers');
+});
+
 test('build-pages: static page with config, CSP and no template markers', () => {
   const { execFileSync } = require('child_process');
   const os = require('os');
@@ -965,6 +1007,17 @@ test('build-pages: static page with config, CSP and no template markers', () => 
   assert.ok(!html.includes('<base target'));
   assert.strictEqual(fs.readFileSync(path.join(out, 'config.js'), 'utf8').includes(JSON.stringify(url)), true);
   assert.ok(fs.existsSync(path.join(out, '.nojekyll')));
+  // gallery page
+  const gal = fs.readFileSync(path.join(out, 'galerie', 'index.html'), 'utf8');
+  assert.ok(!/<\?/.test(gal), 'template markers left in gallery');
+  assert.ok(gal.includes('<title>Galerie – Raphael &amp; Olivia</title>'));
+  assert.ok(gal.indexOf('<script src="../config.js">') < gal.indexOf('<script>\n'), 'gallery loads config.js first');
+  assert.match(gal, /media-src blob:/);
+  assert.match(gal, /name="robots" content="noindex, nofollow"/);
+  assert.ok(!gal.includes('<base target'));
+  assert.ok(!/googleapis/.test(gal.split('</head>')[0]), 'gallery talks only to Apps Script');
+  const built = fs.readdirSync(out, { recursive: true }).map(String).sort();
+  assert.ok(!built.some((f) => /\.gs$|\.json$/.test(f)), 'no backend files published: ' + built);
   // wrong URL formats are refused
   for (const bad of ['', 'https://evil.example.com/exec',
     'https://script.google.com/macros/u/7/s/AKfycbTESTtestTEST1234567890/exec',
