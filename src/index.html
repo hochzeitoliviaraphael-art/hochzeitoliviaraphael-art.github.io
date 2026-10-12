@@ -15,6 +15,7 @@
     --ok: #2f6b3a;
     --err: #a3352b;
     --bar: #c9a77c;
+    --tile: #ece5da;
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; }
@@ -164,15 +165,90 @@
     white-space: pre-wrap;
   }
   #log[hidden] { display: none; }
+
+  /* Tabs */
+  [hidden] { display: none !important; }
+  .tabs {
+    display: flex; gap: 4px; margin: 0 auto 22px; padding: 4px; max-width: 34rem;
+    border-radius: 14px; background: var(--line);
+  }
+  .tab {
+    flex: 1; min-height: 48px; padding: 10px 12px; border: 0; border-radius: 11px;
+    background: transparent; color: var(--muted);
+    font-family: inherit; font-size: 17px; font-weight: 600; cursor: pointer;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tab[aria-selected="true"] { background: var(--card); color: var(--ink); box-shadow: 0 1px 3px rgba(0,0,0,.08); }
+  .tab:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  body.wide main { max-width: 60rem; }
+  body.locked { overflow: hidden; }
+
+  /* Gallery grid */
+  .gbar { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 0 12px; margin: 0 0 10px; color: var(--muted); font-size: 15px; }
+  .linkbtn { background: none; border: 0; padding: 8px 0; color: var(--accent); font: inherit; font-size: 15px; cursor: pointer; }
+  .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 4px; }
+  @media (min-width: 640px) { .grid { grid-template-columns: repeat(4, 1fr); gap: 6px; } }
+  @media (min-width: 960px) { .grid { grid-template-columns: repeat(5, 1fr); } }
+  .tile {
+    position: relative; aspect-ratio: 1 / 1; padding: 0; border: 0; border-radius: 6px; overflow: hidden;
+    background: var(--tile); cursor: pointer; -webkit-tap-highlight-color: transparent;
+  }
+  .tile:focus-visible { outline: 3px solid var(--accent); outline-offset: 2px; }
+  .tile img { width: 100%; height: 100%; object-fit: cover; display: block; opacity: 0; transition: opacity .25s; }
+  .tile img.on { opacity: 1; }
+  .tile .ph { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; color: var(--muted); font-size: 13px; }
+  .tile .badge {
+    position: absolute; right: 5px; bottom: 5px; padding: 1px 7px; border-radius: 99px;
+    background: rgba(0,0,0,.6); color: #fff; font-size: 12px; font-weight: 600;
+  }
+  .gstatus { margin: 18px 0 0; text-align: center; color: var(--muted); }
+  #gsentinel { height: 1px; }
+
+  /* Viewer */
+  .viewer {
+    position: fixed; inset: 0; z-index: 10; display: flex; flex-direction: column;
+    background: #111; color: #fff;
+  }
+  .vtop, .vbottom {
+    display: flex; align-items: center; justify-content: space-between; gap: 8px;
+    padding: 10px 12px; padding-top: max(10px, env(safe-area-inset-top));
+  }
+  .vbottom { padding-bottom: max(12px, env(safe-area-inset-bottom)); }
+  .vbtn {
+    min-width: 48px; min-height: 48px; padding: 0 14px; border: 0; border-radius: 12px;
+    background: rgba(255,255,255,.12); color: #fff; font: inherit; font-size: 16px; font-weight: 600; cursor: pointer;
+  }
+  .vbtn:disabled { opacity: .35; cursor: default; }
+  .vbtn:focus-visible { outline: 3px solid #fff; outline-offset: 2px; }
+  .vcount { font-size: 15px; color: #ddd; }
+  .stage { position: relative; flex: 1; min-height: 0; display: flex; align-items: center; justify-content: center; touch-action: pan-y; }
+  .stage img, .stage video { max-width: 100%; max-height: 100%; object-fit: contain; display: block; }
+  .stage img.soft { filter: blur(6px); }
+  .play {
+    position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%);
+    min-height: 56px; padding: 12px 22px; border: 0; border-radius: 99px;
+    background: rgba(255,255,255,.92); color: #111; font: inherit; font-weight: 700; cursor: pointer;
+    white-space: nowrap;
+  }
+  .vstatus { min-height: 1.4em; padding: 0 16px; text-align: center; font-size: 14px; color: #ddd; }
+  .vprogress { height: 4px; margin: 6px 16px 0; background: rgba(255,255,255,.15); border-radius: 2px; overflow: hidden; }
+  .vprogress > div { height: 100%; width: 0; background: #e8cfa9; transition: width .2s; }
 </style>
 </head>
 <body data-code="<?= code ?>" data-debug="<?= debug ? '1' : '' ?>">
 <main>
   <header>
     <p class="eyebrow"><?= coupleNames ?></p>
-    <h1>Teilt eure Fotos und Videos</h1>
-    <p class="lead">Wir freuen uns über jeden Moment, den ihr festgehalten habt.</p>
+    <h1 id="title">Teilt eure Fotos und Videos</h1>
+    <p class="lead" id="lead">Wir freuen uns über jeden Moment, den ihr festgehalten habt.</p>
   </header>
+
+  <nav class="tabs" id="tabs" role="tablist" aria-label="Ansicht" hidden>
+    <button class="tab" id="tabUpload" type="button" role="tab" aria-controls="uploadView" aria-selected="true">Hochladen</button>
+    <button class="tab" id="tabGallery" type="button" role="tab" aria-controls="galleryView" aria-selected="false">Galerie</button>
+  </nav>
+
+  <section id="uploadView" role="tabpanel" aria-labelledby="tabUpload">
 
   <label for="file" class="pick" id="pick" role="button" tabindex="0">Fotos &amp; Videos auswählen</label>
   <input type="file" id="file" accept="image/*,video/*" multiple>
@@ -190,9 +266,36 @@
   <p class="thanks" id="thanks" hidden>Danke! Eure Dateien sind angekommen. Noch mehr? Einfach wieder auswählen.</p>
   <ul class="files" id="files"></ul>
 
-  <p class="privacy">Eure Dateien landen in einem privaten Ordner des Brautpaars. Niemand sonst sieht sie.</p>
+  <p class="privacy">Eure Dateien landen in einem privaten Ordner des Brautpaars.<span id="privacyPrivate"> Niemand sonst sieht sie.</span><span id="privacyGallery" hidden> In der Galerie sehen sie alle, die diesen Link haben.</span></p>
+  </section>
+
+  <section id="galleryView" role="tabpanel" aria-labelledby="tabGallery" hidden>
+    <div class="gbar">
+      <span id="gcount">Neueste zuerst</span>
+      <button class="linkbtn" id="greload" type="button">Aktualisieren</button>
+    </div>
+    <div class="grid" id="grid"></div>
+    <div id="gsentinel"></div>
+    <p class="gstatus" id="gstatus" role="status"></p>
+  </section>
+
   <pre id="log" hidden></pre>
 </main>
+
+<div class="viewer" id="viewer" hidden role="dialog" aria-modal="true" aria-label="Foto ansehen">
+  <div class="vtop">
+    <span class="vcount" id="vcount"></span>
+    <button class="vbtn" id="vclose" type="button" aria-label="Schließen">✕</button>
+  </div>
+  <div class="stage" id="stage"></div>
+  <div class="vstatus" id="vstatus" role="status"></div>
+  <div class="vprogress" id="vprogress" hidden><div></div></div>
+  <div class="vbottom">
+    <button class="vbtn" id="vprev" type="button" aria-label="Vorheriges">‹</button>
+    <button class="vbtn" id="vsave" type="button">Original speichern</button>
+    <button class="vbtn" id="vnext" type="button" aria-label="Nächstes">›</button>
+  </div>
+</div>
 
 <script>
 (function (global) {
@@ -566,6 +669,73 @@
     return { uploadFile: uploadFile };
   }
 
+  // -------------------------------------------------------------------------
+  // Gallery helpers (no DOM access; tested locally)
+  // -------------------------------------------------------------------------
+  var GALLERY_CHUNK = 8 * MIB;   // must match GALLERY_CHUNK_BYTES in Code.gs
+
+  function formatBytes(n) {
+    if (!(n > 0)) return '';
+    if (n < MIB) return Math.max(1, Math.round(n / KIB)) + ' KB';
+    var mb = n / MIB;
+    return (mb < 10 ? mb.toFixed(1).replace('.', ',') : String(Math.round(mb))) + ' MB';
+  }
+  function formatDuration(ms) {
+    if (!(ms > 0)) return '';
+    var s = Math.round(ms / 1000);
+    var m = Math.floor(s / 60);
+    s = s % 60;
+    return m + ':' + (s < 10 ? '0' : '') + s;
+  }
+  function chunkStarts(total) {
+    var out = [];
+    for (var s = 0; s < total; s += GALLERY_CHUNK) out.push(s);
+    return out;
+  }
+  function base64ToBytes(b64) {
+    var bin = atob(b64);
+    var bytes = new Uint8Array(bin.length);
+    for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
+    return bytes;
+  }
+  function extensionFor(mime) {
+    var map = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/heic': 'heic', 'image/heif': 'heif',
+      'image/webp': 'webp', 'image/gif': 'gif', 'video/mp4': 'mp4', 'video/quicktime': 'mov',
+      'video/x-m4v': 'm4v', 'video/3gpp': '3gp', 'video/webm': 'webm' };
+    return map[mime] || (String(mime).split('/')[1] || 'bin').replace(/[^a-z0-9]/gi, '');
+  }
+
+  /**
+   * Downloads a file in 8 MiB pieces (two requests in flight) and returns a
+   * Blob. `fetchChunk(start)` resolves to the server result.
+   */
+  function downloadInChunks(total, mimeType, fetchChunk, onProgress, isCancelled) {
+    var starts = chunkStarts(total);
+    var parts = new Array(starts.length);
+    var next = 0;
+    var loaded = 0;
+    function worker() {
+      if (next >= starts.length) return Promise.resolve();
+      var index = next++;
+      if (isCancelled && isCancelled()) return Promise.reject({ error: 'CANCELLED' });
+      return fetchChunk(starts[index]).then(function (res) {
+        if (res.start !== starts[index]) throw { error: 'BAD_REQUEST' };
+        parts[index] = base64ToBytes(res.base64);
+        loaded += parts[index].length;
+        if (onProgress) onProgress(loaded / total);
+        return worker();
+      });
+    }
+    return Promise.all([worker(), worker()]).then(function () {
+      if (loaded !== total) throw { error: 'DRIVE_ERROR' };
+      return new Blob(parts, { type: mimeType });
+    });
+  }
+
+  global.__weddingGallery = { formatBytes: formatBytes, formatDuration: formatDuration,
+    chunkStarts: chunkStarts, base64ToBytes: base64ToBytes, extensionFor: extensionFor,
+    downloadInChunks: downloadInChunks, CHUNK: GALLERY_CHUNK };
+
   // Expose internals for the local test suite.
   global.__weddingUpload = { createEngine: createEngine, parseRangeNext: parseRangeNext,
     isVideo: isVideo, UploadError: UploadError };
@@ -892,16 +1062,525 @@
     fileInput.value = '';
   });
 
-  if (!CODE) {
-    showNotice(ERROR_TEXT.BAD_CODE);
-  } else if (API_URL) {
-    // Outside Apps Script nobody has checked the link yet: do it now.
+  // -------------------------------------------------------------------------
+  // Gallery tab: same access code as the upload, released by GALLERY_ENABLED
+  // -------------------------------------------------------------------------
+  function createGallery(callServer, code, log) {
+    var THUMB_BATCH = 24;            // must be <= GALLERY_MAX_THUMBS_PER_CALL
+    var THUMB_PARALLEL = 2;
+    var RETRY = { NETWORK: 1, DRIVE_ERROR: 1, RATE_LIMIT: 1 };
+    var STORE_KEY = 'hochzeitGalerie';
+    function $(id) { return document.getElementById(id); }
+    function wait(ms) { return new Promise(function (r) { setTimeout(r, ms); }); }
+
+    // ----- server: the code from the link opens a short-lived signed token
+    var session = null;
+    var opening = null;
+    try {
+      var stored = JSON.parse(localStorage.getItem(STORE_KEY) || 'null');
+      if (stored && stored.token && stored.expiresAt > Date.now() + 60000) session = stored;
+    } catch (e) { /* storage blocked */ }
+
+    function saveSession(s) {
+      session = s;
+      try { localStorage.setItem(STORE_KEY, JSON.stringify(s)); } catch (e) { /* private mode */ }
+    }
+    function clearSession() {
+      session = null;
+      try { localStorage.removeItem(STORE_KEY); } catch (e) { /* ignore */ }
+    }
+    function call(fn, arg) {
+      return callServer(fn, arg).catch(function (err) {
+        log('gallery ' + fn + ' network error: ' + (err && err.message));
+        return { ok: false, error: 'NETWORK', message: 'Keine Verbindung. Bitte gleich noch einmal versuchen.' };
+      });
+    }
+    function openSession() {
+      if (session) return Promise.resolve(session);
+      if (!opening) {
+        opening = call('openGallery', { code: code }).then(function (res) {
+          opening = null;
+          if (!res || !res.ok) throw res || { error: 'NETWORK' };
+          saveSession({ token: res.token, expiresAt: res.expiresAt, maxFileBytes: res.maxFileBytes });
+          return session;
+        }, function (err) { opening = null; throw err; });
+      }
+      return opening;
+    }
+    function api(fn, req, retries) {
+      retries = retries === undefined ? 3 : retries;
+      var attempt = 0;
+      var reopened = false;
+      function retryOrThrow(res) {
+        if (res.error === 'GALLERY_CLOSED') { clearSession(); closed(res.message); throw res; }
+        if (RETRY[res.error] && attempt < retries) return wait(1000 * Math.pow(2, attempt++)).then(once);
+        throw res;
+      }
+      function once() {
+        return openSession().then(function (s) {
+          return call(fn, Object.assign({ token: s.token }, req || {}));
+        }).then(function (res) {
+          if (res && res.ok) return res;
+          res = res || { ok: false, error: 'NETWORK' };
+          // Token expired or the code was changed: get a fresh one once.
+          if (res.error === 'BAD_TOKEN' && !reopened) { reopened = true; clearSession(); return once(); }
+          return retryOrThrow(res);
+        }, function (err) {
+          return retryOrThrow(err || { error: 'NETWORK' });
+        });
+      }
+      return once();
+    }
+    function maxBytes() { return session ? session.maxFileBytes : Infinity; }
+
+    // ----- grid
+    var grid = $('grid'), statusEl = $('gstatus'), countEl = $('gcount'), sentinel = $('gsentinel');
+    var items = [];
+    var thumbs = new Map();      // id -> data URL
+    var tiles = new Map();       // id -> tile element
+    var nextPageToken = '';
+    var hasMore = true;
+    var loadingPage = false;
+    var generation = 0;          // bumps on reload so stale responses are ignored
+    var thumbQueue = [];
+    var thumbQueued = new Set();
+    var thumbInFlight = 0;
+    var started = false;
+
+    var thumbObserver = 'IntersectionObserver' in window ? new IntersectionObserver(function (entries) {
+      entries.forEach(function (e) {
+        if (!e.isIntersecting) return;
+        thumbObserver.unobserve(e.target);
+        queueThumb(e.target.dataset.id);
+      });
+    }, { rootMargin: '600px 0px' }) : null;
+
+    var pageObserver = 'IntersectionObserver' in window ? new IntersectionObserver(function (entries) {
+      if (entries.some(function (e) { return e.isIntersecting; })) loadPage();
+    }, { rootMargin: '800px 0px' }) : null;
+
+    function resetGrid() {
+      generation++;
+      items = [];
+      tiles.clear();
+      thumbQueue = [];
+      thumbQueued.clear();
+      nextPageToken = '';
+      hasMore = true;
+      loadingPage = false;
+      grid.textContent = '';
+      countEl.textContent = 'Neueste zuerst';
+    }
+
+    function closed(message) {
+      closeViewer();
+      resetGrid();
+      hasMore = false;
+      statusEl.textContent = message || 'Die Galerie ist gerade geschlossen.';
+    }
+
+    function loadPage() {
+      if (loadingPage || !hasMore) return;
+      loadingPage = true;
+      var gen = generation;
+      statusEl.textContent = items.length ? 'Lade weitere …' : 'Lade Fotos …';
+      api('listGallery', { pageToken: nextPageToken }).then(function (res) {
+        if (gen !== generation) return;
+        loadingPage = false;
+        nextPageToken = res.nextPageToken || '';
+        hasMore = !!nextPageToken;
+        res.items.forEach(addTile);
+        countEl.textContent = items.length + (hasMore ? '+' : '') + ' Fotos & Videos · neueste zuerst';
+        statusEl.textContent = items.length ? (hasMore ? '' : 'Das war alles. Danke fürs Teilen!')
+          : 'Noch keine Fotos. Seid die Ersten!';
+        if (!pageObserver && hasMore) loadPage();
+        else if (pageObserver && hasMore && sentinelVisible()) loadPage();
+      }).catch(function (err) {
+        if (gen !== generation) return;
+        loadingPage = false;
+        if (err && err.error === 'GALLERY_CLOSED') return;
+        statusEl.textContent = (err && err.message) || 'Das hat nicht geklappt.';
+        var again = document.createElement('button');
+        again.className = 'linkbtn';
+        again.type = 'button';
+        again.textContent = ' Erneut versuchen';
+        again.addEventListener('click', loadPage);
+        statusEl.appendChild(again);
+      });
+    }
+
+    function sentinelVisible() {
+      var r = sentinel.getBoundingClientRect();
+      return r.top < window.innerHeight + 800;
+    }
+
+    function addTile(item) {
+      if (tiles.has(item.id)) return;
+      var index = items.length;
+      items.push(item);
+      var tile = document.createElement('button');
+      tile.type = 'button';
+      tile.className = 'tile';
+      tile.dataset.id = item.id;
+      tile.setAttribute('aria-label', (item.kind === 'video' ? 'Video ' : 'Foto ') + (index + 1));
+      var ph = document.createElement('span');
+      ph.className = 'ph';
+      ph.textContent = item.hasThumb ? '' : (item.kind === 'video' ? 'Video' : 'Foto');
+      tile.appendChild(ph);
+      var img = document.createElement('img');
+      img.alt = '';
+      img.addEventListener('load', function () { img.classList.add('on'); });
+      tile.appendChild(img);
+      if (item.kind === 'video') {
+        var badge = document.createElement('span');
+        badge.className = 'badge';
+        badge.textContent = '▶ ' + (formatDuration(item.durationMs) || 'Video');
+        tile.appendChild(badge);
+      }
+      tile.addEventListener('click', function () { openViewer(items.indexOf(item)); });
+      grid.appendChild(tile);
+      tiles.set(item.id, tile);
+      if (thumbs.has(item.id)) setTileThumb(item.id);
+      else if (item.hasThumb) {
+        if (thumbObserver) thumbObserver.observe(tile);
+        else queueThumb(item.id);
+      }
+    }
+
+    function setTileThumb(id) {
+      var tile = tiles.get(id);
+      var url = thumbs.get(id);
+      if (!tile || !url) return;
+      tile.querySelector('img').src = url;
+    }
+
+    function queueThumb(id) {
+      if (!id || thumbs.has(id) || thumbQueued.has(id)) return;
+      thumbQueued.add(id);
+      thumbQueue.push(id);
+      pumpThumbs();
+    }
+
+    function pumpThumbs() {
+      while (thumbInFlight < THUMB_PARALLEL && thumbQueue.length) {
+        var batch = thumbQueue.splice(0, THUMB_BATCH);
+        thumbInFlight++;
+        (function (ids) {
+          api('getGalleryThumbnails', { ids: ids }).then(function (res) {
+            ids.forEach(function (id) {
+              var url = res.thumbs[id];
+              if (url) { thumbs.set(id, url); setTileThumb(id); }
+              else {
+                var tile = tiles.get(id);
+                if (tile) tile.querySelector('.ph').textContent = 'Vorschau folgt';
+              }
+            });
+          }).catch(function () {
+            ids.forEach(function (id) { thumbQueued.delete(id); });
+          }).then(function () {
+            thumbInFlight--;
+            pumpThumbs();
+          });
+        })(batch);
+      }
+    }
+
+    $('greload').addEventListener('click', function () {
+      resetGrid();
+      loadPage();
+    });
+
+    // ----- viewer
+    var viewer = $('viewer'), stage = $('stage'), vcount = $('vcount'), vstatus = $('vstatus');
+    var vprogress = $('vprogress'), vprev = $('vprev'), vnext = $('vnext'), vsave = $('vsave');
+    var current = -1;
+    var previews = new Map();   // id -> data URL (bounded)
+    var videoUrls = new Map();  // id -> object URL (bounded)
+    var job = null;             // running download {cancelled}
+    var lastFocus = null;
+
+    function remember(map, key, value, max, onEvict) {
+      map.delete(key);
+      map.set(key, value);
+      while (map.size > max) {
+        var oldest = map.keys().next().value;
+        if (onEvict) onEvict(map.get(oldest));
+        map.delete(oldest);
+      }
+    }
+
+    function openViewer(index) {
+      if (index < 0) return;
+      if (viewer.hidden) lastFocus = document.activeElement;
+      viewer.hidden = false;
+      document.body.classList.add('locked');
+      show(index);
+      $('vclose').focus();
+    }
+
+    function closeViewer() {
+      cancelJob();
+      if (viewer.hidden) return;
+      viewer.hidden = true;
+      document.body.classList.remove('locked');
+      stage.textContent = '';
+      current = -1;
+      if (lastFocus && lastFocus.focus) lastFocus.focus();
+    }
+
+    function cancelJob() {
+      if (job) job.cancelled = true;
+      job = null;
+      vprogress.hidden = true;
+    }
+
+    function setProgress(fraction) {
+      vprogress.hidden = false;
+      vprogress.firstElementChild.style.width = Math.round(fraction * 100) + '%';
+    }
+
+    function show(index) {
+      cancelJob();
+      current = index;
+      var item = items[index];
+      stage.textContent = '';
+      vstatus.textContent = '';
+      vcount.textContent = (index + 1) + ' / ' + items.length + (hasMore ? '+' : '');
+      vprev.disabled = index <= 0;
+      vnext.disabled = index >= items.length - 1 && !hasMore;
+      var tooLarge = item.size > maxBytes();
+      vsave.disabled = tooLarge;
+      vsave.textContent = 'Original speichern' + (item.size ? ' (' + formatBytes(item.size) + ')' : '');
+      if (index >= items.length - 5) loadPage();
+      if (item.kind === 'video') showVideo(item, tooLarge);
+      else showImage(item);
+    }
+
+    function showImage(item) {
+      var img = document.createElement('img');
+      img.alt = 'Foto ' + (current + 1);
+      var cached = previews.get(item.id);
+      if (cached) { img.src = cached; stage.appendChild(img); return; }
+      if (thumbs.has(item.id)) { img.src = thumbs.get(item.id); img.className = 'soft'; }
+      stage.appendChild(img);
+      var id = item.id;
+      api('getGalleryPreview', { id: id }).then(function (res) {
+        if (!res.dataUrl) {
+          if (!thumbs.has(id)) vstatus.textContent = 'Für dieses Foto gibt es noch keine Vorschau. „Original speichern“ geht trotzdem.';
+          img.className = '';
+          return;
+        }
+        remember(previews, id, res.dataUrl, 15);
+        if (items[current] && items[current].id === id) { img.src = res.dataUrl; img.className = ''; }
+      }).catch(function (err) {
+        if (items[current] && items[current].id === id) {
+          vstatus.textContent = (err && err.message) || 'Vorschau konnte nicht geladen werden.';
+        }
+      });
+    }
+
+    function showVideo(item, tooLarge) {
+      var url = videoUrls.get(item.id);
+      if (url) { mountVideo(url); return; }
+      if (thumbs.has(item.id)) {
+        var poster = document.createElement('img');
+        poster.alt = 'Video ' + (current + 1);
+        poster.src = thumbs.get(item.id);
+        stage.appendChild(poster);
+      }
+      if (tooLarge) {
+        vstatus.textContent = 'Dieses Video ist zu groß, um es hier abzuspielen.';
+        return;
+      }
+      var play = document.createElement('button');
+      play.type = 'button';
+      play.className = 'play';
+      play.textContent = '▶ Video abspielen' + (item.size ? ' · ' + formatBytes(item.size) : '');
+      play.addEventListener('click', function () {
+        play.remove();
+        fetchOriginal(item, 'Video wird geladen').then(function (blob) {
+          var objectUrl = URL.createObjectURL(blob);
+          remember(videoUrls, item.id, objectUrl, 2, function (old) { URL.revokeObjectURL(old); });
+          if (items[current] && items[current].id === item.id) mountVideo(objectUrl);
+        }).catch(function (err) {
+          if (err && err.error === 'CANCELLED') return;
+          vstatus.textContent = (err && err.message) || 'Das Video konnte nicht geladen werden.';
+          stage.appendChild(play);
+        });
+      });
+      stage.appendChild(play);
+    }
+
+    function mountVideo(url) {
+      stage.textContent = '';
+      vstatus.textContent = '';
+      var video = document.createElement('video');
+      video.controls = true;
+      video.playsInline = true;
+      video.setAttribute('playsinline', '');
+      video.src = url;
+      stage.appendChild(video);
+      var p = video.play();
+      if (p && p.catch) p.catch(function () { /* autoplay blocked: controls are there */ });
+    }
+
+    function fetchOriginal(item, label) {
+      cancelJob();
+      var myJob = { cancelled: false };
+      job = myJob;
+      setProgress(0);
+      vstatus.textContent = label + ' … 0 %';
+      return downloadInChunks(item.size, item.mimeType, function (start) {
+        return api('getGalleryChunk', { id: item.id, start: start });
+      }, function (fraction) {
+        if (myJob.cancelled) return;
+        setProgress(fraction);
+        vstatus.textContent = label + ' … ' + Math.round(fraction * 100) + ' %';
+      }, function () { return myJob.cancelled; }).then(function (blob) {
+        if (myJob.cancelled) throw { error: 'CANCELLED' };
+        if (job === myJob) job = null;
+        vprogress.hidden = true;
+        vstatus.textContent = '';
+        return blob;
+      }, function (err) {
+        if (job === myJob) { job = null; vprogress.hidden = true; }
+        throw err;
+      });
+    }
+
+    vsave.addEventListener('click', function () {
+      var item = items[current];
+      if (!item) return;
+      var cachedUrl = item.kind === 'video' ? videoUrls.get(item.id) : null;
+      var ready = cachedUrl ? Promise.resolve(cachedUrl)
+        : fetchOriginal(item, 'Original wird geladen').then(function (blob) { return URL.createObjectURL(blob); });
+      ready.then(function (url) {
+        var a = document.createElement('a');
+        a.href = url;
+        var date = String(item.created || '').slice(0, 10) || 'hochzeit';
+        a.download = 'Hochzeit-' + date + '-' + (current + 1) + '.' + extensionFor(item.mimeType);
+        document.body.appendChild(a);
+        a.click();
+        a.remove();
+        vstatus.textContent = 'Gespeichert. Auf dem iPhone ggf. über „Teilen“ in Fotos sichern.';
+        if (!cachedUrl) setTimeout(function () { URL.revokeObjectURL(url); }, 60000);
+      }).catch(function (err) {
+        if (err && err.error === 'CANCELLED') return;
+        vstatus.textContent = (err && err.message) || 'Speichern hat nicht geklappt.';
+      });
+    });
+
+    function step(delta) {
+      var target = current + delta;
+      if (target < 0 || target >= items.length) return;
+      show(target);
+    }
+
+    vprev.addEventListener('click', function () { step(-1); });
+    vnext.addEventListener('click', function () { step(1); });
+    $('vclose').addEventListener('click', closeViewer);
+    document.addEventListener('keydown', function (ev) {
+      if (viewer.hidden) return;
+      if (ev.key === 'Escape') closeViewer();
+      else if (ev.key === 'ArrowLeft') step(-1);
+      else if (ev.key === 'ArrowRight') step(1);
+    });
+
+    var touchX = null, touchY = null;
+    stage.addEventListener('touchstart', function (ev) {
+      if (ev.touches.length !== 1) { touchX = null; return; }
+      touchX = ev.touches[0].clientX;
+      touchY = ev.touches[0].clientY;
+    }, { passive: true });
+    stage.addEventListener('touchend', function (ev) {
+      if (touchX === null) return;
+      var dx = ev.changedTouches[0].clientX - touchX;
+      var dy = ev.changedTouches[0].clientY - touchY;
+      touchX = null;
+      if (Math.abs(dx) > 50 && Math.abs(dx) > Math.abs(dy) * 1.5) step(dx < 0 ? 1 : -1);
+    }, { passive: true });
+
+    return {
+      activate: function () {
+        if (started) return;
+        started = true;
+        resetGrid();
+        loadPage();
+        if (pageObserver) pageObserver.observe(sentinel);
+      },
+      deactivate: closeViewer
+    };
+  }
+
+  // ----- tabs: "Hochladen" and "Galerie" -----
+  var tabsEl = document.getElementById('tabs');
+  var tabUpload = document.getElementById('tabUpload');
+  var tabGallery = document.getElementById('tabGallery');
+  var uploadView = document.getElementById('uploadView');
+  var galleryView = document.getElementById('galleryView');
+  var titleEl = document.getElementById('title');
+  var leadEl = document.getElementById('lead');
+  var TITLES = {
+    upload: [titleEl.textContent, leadEl.textContent],
+    gallery: ['Eure Fotos und Videos', 'Alles, was ihr mit uns geteilt habt.']
+  };
+  var gallery = null;
+
+  function setTab(name) {
+    var isGallery = name === 'gallery';
+    tabUpload.setAttribute('aria-selected', String(!isGallery));
+    tabGallery.setAttribute('aria-selected', String(isGallery));
+    uploadView.hidden = isGallery;
+    galleryView.hidden = !isGallery;
+    body.classList.toggle('wide', isGallery);
+    titleEl.textContent = TITLES[name][0];
+    leadEl.textContent = TITLES[name][1];
+    try {
+      global.history.replaceState(null, '', isGallery ? '#galerie' : global.location.pathname + global.location.search);
+    } catch (e) { /* ignore */ }
+    if (isGallery) gallery.activate();
+    else gallery.deactivate();
+  }
+  tabUpload.addEventListener('click', function () { setTab('upload'); });
+  tabGallery.addEventListener('click', function () { setTab('gallery'); });
+
+  /** Applies what the server says is open: upload, gallery or both. */
+  function applyAccess(res) {
+    if (!res.gallery) return;
+    gallery = createGallery(callServer, CODE, log);
+    document.getElementById('privacyGallery').hidden = false;
+    document.getElementById('privacyPrivate').hidden = true;
+    if (res.upload === false) {
+      // Upload closed, gallery open: show only the gallery.
+      TITLES.gallery[1] = 'Der Upload ist beendet. Danke für all eure Fotos und Videos!';
+      setTab('gallery');
+      return;
+    }
+    tabsEl.hidden = false;
+    setTab(global.location.hash === '#galerie' ? 'gallery' : 'upload');
+  }
+
+  // ----- start -----
+  // Checks the link and asks which parts are open (upload, gallery).
+  function checkAccess(attempt) {
     callServer('checkAccess', { code: CODE }).then(function (res) {
+      log('checkAccess: ' + (res && res.ok ? 'ok, mode=' + res.mode + ', upload=' + res.upload +
+        ', gallery=' + res.gallery : res && res.error));
       if (res && !res.ok && (res.error === 'CLOSED' || res.error === 'BAD_CODE')) {
         showNotice(ERROR_TEXT[res.error]);
+      } else if (res && res.ok) {
+        applyAccess(res);
       }
-      log('checkAccess: ' + (res && res.ok ? 'ok, mode=' + res.mode : res && res.error));
-    }, function (err) { log('checkAccess failed: ' + (err && err.message)); });
+    }, function (err) {
+      log('checkAccess failed: ' + (err && err.message));
+      if (attempt < 2) setTimeout(function () { checkAccess(attempt + 1); }, 2000 * (attempt + 1));
+    });
+  }
+
+  if (!CODE) {
+    showNotice(ERROR_TEXT.BAD_CODE);
+  } else {
+    checkAccess(0);
   }
   log('ready, origin=' + global.location.origin + (API_URL ? ', api' : ''));
 })(this);

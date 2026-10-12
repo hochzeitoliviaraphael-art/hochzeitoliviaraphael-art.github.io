@@ -7,9 +7,9 @@
  * Configuration lives in Script Properties (see README.md), never in code:
  *   FOLDER_ID, ACCESS_CODE, ENABLED, UPLOAD_MODE, MAX_FILE_MB,
  *   MAX_FILE_MB_PROXY, PROXY_CHUNK_MB, RATE_LIMIT_PER_MIN
- * Gallery (optional, see README "Galerie"):
- *   GALLERY_ENABLED, GALLERY_USER, GALLERY_PASSWORD, GALLERY_SESSION_HOURS,
- *   GALLERY_MAX_FILE_MB, GALLERY_RATE_LIMIT_PER_MIN
+ * Gallery (optional, see README "Galerie"; same ACCESS_CODE as the upload):
+ *   GALLERY_ENABLED, GALLERY_SESSION_HOURS, GALLERY_MAX_FILE_MB,
+ *   GALLERY_RATE_LIMIT_PER_MIN
  *
  * Security rules:
  *   - The OAuth token never leaves the server.
@@ -26,7 +26,6 @@ const COUPLE_NAMES = 'Raphael & Olivia';
 // Shown as: "der Link gilt bis <CLOSING_DATE_TEXT>". Replace with a concrete date if you prefer.
 const CLOSING_DATE_TEXT = 'vier Wochen nach der Hochzeit';
 const PAGE_TITLE = 'Fotos & Videos teilen';
-const GALLERY_TITLE = 'Galerie';
 
 // ---------------------------------------------------------------------------
 // Constants
@@ -84,9 +83,8 @@ const MESSAGES = {
   SESSION_EXPIRED: 'Der Upload wird neu gestartet.',
   WRONG_MODE: 'Da ist etwas schiefgelaufen. Bitte versucht es noch einmal.',
   GALLERY_CLOSED: 'Die Galerie ist gerade geschlossen.',
-  BAD_LOGIN: 'Benutzername oder Passwort stimmt nicht.',
   TOO_MANY_TRIES: 'Zu viele falsche Versuche. Bitte in ein paar Minuten noch einmal.',
-  BAD_TOKEN: 'Bitte meldet euch noch einmal an.',
+  BAD_TOKEN: 'Bitte ladet die Seite neu.',
   NOT_FOUND: 'Diese Datei gibt es nicht mehr.',
   TOO_LARGE_VIEW: 'Diese Datei ist zu groß für die Galerie.',
 };
@@ -104,9 +102,8 @@ const MESSAGES = {
 function doGet(e) {
   const params = (e && e.parameter) || {};
 
-  if (params.view === 'galerie') return galleryPage_();
-
-  if (!isEnabled_()) {
+  // The page stays reachable while either the upload or the gallery is open.
+  if (!isEnabled_() && !isGalleryEnabled_()) {
     return noticePage_('Der Upload ist beendet. Danke!',
       'Vielen Dank für all eure Fotos und Videos.');
   }
@@ -157,14 +154,18 @@ function doPost(e) {
 }
 
 /**
- * Lets the external page show "closed" or "invalid link" right away.
+ * Tells the page which parts are open: upload and/or gallery. Lets it show
+ * "closed" or "invalid link" right away.
  * @param {{code:string}} req
+ * @return {Object} {ok:true, mode, upload:boolean, gallery:boolean} or error
  */
 function checkAccess(req) {
   req = req || {};
-  if (!isEnabled_()) return errorResult_('CLOSED');
+  const upload = isEnabled_();
+  const gallery = isGalleryEnabled_();
+  if (!upload && !gallery) return errorResult_('CLOSED');
   if (!isValidCode_(req.code)) return errorResult_('BAD_CODE');
-  return { ok: true, mode: getMode_() };
+  return { ok: true, mode: getMode_(), upload: upload, gallery: gallery };
 }
 
 // ---------------------------------------------------------------------------
@@ -308,16 +309,17 @@ function getUploadStatus(req) {
 }
 
 // ---------------------------------------------------------------------------
-// Gallery: guests view all uploads, protected by GALLERY_USER + GALLERY_PASSWORD
+// Gallery: guests view all uploads, opened with the same ACCESS_CODE as the upload
 // ---------------------------------------------------------------------------
 //
 // Access model:
-//   1. The guest opens the gallery page (GitHub Pages /galerie/ or ?view=galerie)
-//      and signs in with user name and password. Both live only in Script
-//      Properties; the public repo and the published page never contain them.
-//   2. openGallery() checks both and returns a signed token with an expiry
-//      (HMAC-SHA256, key derived from user, password and FOLDER_ID). Changing
-//      the user or the password therefore logs everybody out immediately.
+//   1. The upload page (QR code link with ?k=<ACCESS_CODE>) shows a "Galerie"
+//      tab once GALLERY_ENABLED is true. No extra login: whoever has the link
+//      can upload and, once released, view.
+//   2. openGallery() checks the code and returns a signed token with an expiry
+//      (HMAC-SHA256, key derived from ACCESS_CODE and FOLDER_ID). Changing
+//      ACCESS_CODE therefore logs everybody out immediately (and invalidates
+//      the printed QR code, so only do that in an emergency).
 //   3. Every other gallery call needs a valid token and only ever touches files
 //      that are direct, non-trashed children of FOLDER_ID with an image/video
 //      type. Moving a file into a subfolder or the trash hides it (within
@@ -340,24 +342,10 @@ const GALLERY_TOKEN_VERSION = 'v1';
 const FILE_ID_PATTERN = /^[A-Za-z0-9_-]{10,200}$/;
 const THUMB_HOST_PATTERN = /^https:\/\/[a-z0-9-]+\.googleusercontent\.com\//;
 
-/** Serves the gallery page (login form + viewer). */
-function galleryPage_() {
-  if (!isGalleryEnabled_()) {
-    return noticePage_('Die Galerie ist noch geschlossen.',
-      'Schaut später noch einmal vorbei. Das Brautpaar sagt Bescheid.');
-  }
-  const template = HtmlService.createTemplateFromFile('gallery');
-  template.coupleNames = COUPLE_NAMES;
-  return template.evaluate()
-    .setTitle(GALLERY_TITLE + ' – ' + COUPLE_NAMES)
-    .addMetaTag('viewport', 'width=device-width, initial-scale=1, viewport-fit=cover');
-}
-
 /**
- * Checks user name and password and returns a signed, expiring token.
- * The user name ignores case and surrounding spaces (phones like to
- * capitalize); the password is compared exactly.
- * @param {{user:string, password:string}} req
+ * Checks the access code (the same one as for the upload, from the QR code)
+ * and returns a signed, expiring token for the gallery calls.
+ * @param {{code:string}} req
  * @return {Object} {ok:true, token, expiresAt, maxFileBytes} or error
  */
 function openGallery(req) {
@@ -369,17 +357,12 @@ function openGallery(req) {
     const fails = Number(cache.get(failKey) || 0);
     if (fails >= GALLERY_FAIL_LIMIT) return errorResult_('TOO_MANY_TRIES');
 
-    const expectedUser = getGalleryUser_();
-    const expectedPassword = getProp_('GALLERY_PASSWORD');
-    const user = typeof req.user === 'string' ? req.user.trim().toLowerCase() : '';
-    const password = typeof req.password === 'string' ? req.password.trim() : '';
-    // Both comparisons always run, so timing does not reveal which one failed.
-    const userOk = safeEqual_(user, expectedUser);
-    const passwordOk = safeEqual_(password, expectedPassword);
-    if (!user || !password || !userOk || !passwordOk) {
+    const expected = getProp_('ACCESS_CODE');
+    const code = typeof req.code === 'string' ? req.code.trim() : '';
+    if (!expected || !code || !safeEqual_(code, expected)) {
       cache.put(failKey, String(fails + 1), 900);
       if (typeof Utilities.sleep === 'function') Utilities.sleep(700); // slows guessing
-      return errorResult_('BAD_LOGIN');
+      return errorResult_('BAD_CODE');
     }
 
     const expiresAt = Date.now() + getGallerySessionHours_() * 3600 * 1000;
@@ -597,18 +580,12 @@ function getGalleryChunk(req) {
 
 // --- gallery helpers --------------------------------------------------------
 
-const GALLERY_MIN_PASSWORD = 10;
-const GALLERY_MIN_USER = 3;
+const GALLERY_MIN_CODE = 10;
 
 function isGalleryEnabled_() {
   return getProp_('GALLERY_ENABLED') === 'true' &&
-    getGalleryUser_().length >= GALLERY_MIN_USER &&
-    getProp_('GALLERY_PASSWORD').length >= GALLERY_MIN_PASSWORD &&
+    getProp_('ACCESS_CODE').length >= GALLERY_MIN_CODE &&
     FILE_ID_PATTERN.test(getProp_('FOLDER_ID'));
-}
-
-function getGalleryUser_() {
-  return getProp_('GALLERY_USER').toLowerCase();
 }
 
 function getGallerySessionHours_() {
@@ -630,9 +607,8 @@ function checkGalleryRequest_(req) {
 }
 
 function galleryKey_() {
-  // Bound to the login and the folder: changing any of them invalidates all tokens.
-  return 'gallery|' + JSON.stringify([getGalleryUser_(), getProp_('GALLERY_PASSWORD'),
-    getProp_('FOLDER_ID')]);
+  // Bound to the access code and the folder: changing either invalidates all tokens.
+  return 'gallery|' + JSON.stringify([getProp_('ACCESS_CODE'), getProp_('FOLDER_ID')]);
 }
 
 function signGalleryToken_(expiresAt) {
@@ -835,24 +811,16 @@ function testAuth() {
     }
   }
 
-  const galleryOn = getProp_('GALLERY_ENABLED') === 'true';
-  const galleryUser = getGalleryUser_();
-  const galleryPassword = getProp_('GALLERY_PASSWORD');
-  if (galleryOn && galleryUser.length < GALLERY_MIN_USER) {
-    problems.push('Galerie: GALLERY_USER fehlt oder ist kürzer als ' + GALLERY_MIN_USER +
+  if (getProp_('GALLERY_ENABLED') === 'true' && code.length < GALLERY_MIN_CODE) {
+    problems.push('Galerie: ACCESS_CODE ist kürzer als ' + GALLERY_MIN_CODE +
       ' Zeichen, die Galerie bleibt zu.');
   }
-  if (galleryOn && galleryPassword.length < GALLERY_MIN_PASSWORD) {
-    problems.push('Galerie: GALLERY_PASSWORD fehlt oder ist kürzer als ' + GALLERY_MIN_PASSWORD +
-      ' Zeichen, die Galerie bleibt zu.');
-  }
-  if (galleryPassword && galleryPassword === getProp_('ACCESS_CODE')) {
-    problems.push('Galerie: GALLERY_PASSWORD sollte sich vom ACCESS_CODE unterscheiden.');
-  }
-  if (getProp_('GALLERY_CODE')) {
-    problems.push('Galerie: GALLERY_CODE wird nicht mehr verwendet. Bitte löschen und ' +
-      'GALLERY_USER und GALLERY_PASSWORD setzen.');
-  }
+  ['GALLERY_CODE', 'GALLERY_USER', 'GALLERY_PASSWORD'].forEach(function (name) {
+    if (getProp_(name)) {
+      problems.push('Galerie: ' + name + ' wird nicht mehr verwendet (die Galerie öffnet mit ' +
+        'dem ACCESS_CODE). Bitte löschen.');
+    }
+  });
 
   console.log('Modus: ' + mode + ', ENABLED: ' + isEnabled_() +
     ', Galerie: ' + (isGalleryEnabled_() ? 'offen' : 'geschlossen'));

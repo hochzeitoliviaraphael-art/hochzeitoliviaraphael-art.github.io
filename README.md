@@ -2,16 +2,15 @@
 
 Gäste scannen einen QR-Code und laden Fotos und Videos ohne Konto und ohne App in einen privaten Google-Drive-Ordner hoch. In einer geschützten Galerie können sich alle Gäste die Fotos und Videos ansehen (Abschnitt 10). Technik: Google Apps Script als Web-App, Drive API (Resumable Upload). Kosten: 0 €.
 
-Stand: Upload live auf GitHub Pages und auf echten Handys getestet. Die Galerie mit Benutzername und Passwort ist lokal gegen eine simulierte Drive-API getestet (44 Tests) und im Browser durchgespielt; der Test auf echten Handys steht noch aus (Abschnitt 10).
+Stand: Upload live auf GitHub Pages und auf echten Handys getestet. Die Galerie (zweiter Reiter, gleicher Code) ist lokal gegen eine simulierte Drive-API getestet (44 Tests) und im Browser durchgespielt; der Test auf echten Handys steht noch aus (Abschnitt 10).
 
 ## Inhalt
 
 ```
 src/appsscript.json   Manifest (Web-App, Berechtigungen)
 src/Code.gs           Backend
-src/index.html        Upload-Seite
-src/gallery.html      Galerie-Seite
-tools/build-pages.js  Baut Upload-Seite und Galerie für GitHub Pages (Variante B)
+src/index.html        Upload-Seite mit Galerie-Reiter
+tools/build-pages.js  Baut die Seite für GitHub Pages (Variante B)
 tools/setup-github.sh Legt Repo, Secret und GitHub Pages an
 .github/workflows/    Veröffentlicht die Seite bei jedem Push
 test/run-tests.js     Lokale Tests (node test/run-tests.js)
@@ -36,7 +35,6 @@ Im Hochzeitskonto unter [script.google.com](https://script.google.com) „Neues 
 2. Inhalt von `src/appsscript.json` in `appsscript.json` einfügen. Der Block `dependencies` schaltet die Drive API ein, `oauthScopes` gibt dem Script die Drive-Rechte. Fehlt eines davon, meldet `testAuth` Status 403. Alternativ links bei „Dienste“ auf das Plus klicken und „Drive API“ (v3) hinzufügen.
 3. Inhalt von `src/Code.gs` in `Code.gs` einfügen.
 4. Neue HTML-Datei `index` anlegen (der Editor ergänzt `.html`) und `src/index.html` einfügen.
-5. Optional, only for the gallery fallback address: create an HTML file `gallery` and paste `src/gallery.html` (see section 10).
 
 **Mit clasp (optional):**
 
@@ -191,39 +189,37 @@ Diese Punkte konnte ich ohne echtes Google-Konto nicht prüfen. Teil A klärt di
 
 ## 10. Galerie (gallery)
 
-Guests see every photo and video from the upload folder, newest first: photos open full size, videos play in the page, and every original can be saved. The gallery is independent of the upload: it can stay open while `ENABLED=false`.
+Guests see every photo and video from the upload folder, newest first: photos open full size, videos play in the page, and every original can be saved.
 
-- **Address for guests:** `https://hochzeitoliviaraphael-art.github.io/galerie/` (GitHub Pages, works with several Google accounts signed in).
-- The Apps Script address `…/exec?view=galerie` serves the same page as a fallback, but fails on phones signed in to several Google accounts.
+- **Same page, same code:** The gallery is a second tab ("Galerie") on the upload page, i.e. the address from the QR code: `https://hochzeitoliviaraphael-art.github.io/?k=<ACCESS_CODE>`. There is no separate login. Whoever has the link can upload and, once released, view.
+- **Direct link to the gallery tab:** append `#galerie`, e.g. `https://hochzeitoliviaraphael-art.github.io/?k=<ACCESS_CODE>#galerie` (handy for the WhatsApp group after the wedding).
+- **Release:** The tab only appears when `GALLERY_ENABLED=true`. Until then the page looks exactly like before.
+- **After the upload closes:** With `ENABLED=false` and `GALLERY_ENABLED=true` the same link shows only the gallery ("Der Upload ist beendet …"). With both off, the link shows the closed notice.
 
 ### Access protection
 
-- **User name and password:** The gallery opens only with `GALLERY_USER` and `GALLERY_PASSWORD`. The user name ignores upper/lower case (phones like to capitalize the first letter); the password is case-sensitive. The upload code from the QR code does not open the gallery.
-- **Where the login lives:** Only in the Apps Script Script Properties. It is *not* a GitHub secret on purpose: everything GitHub Actions puts into the page is readable by anyone who opens it, so a password baked into the page would protect nothing. The page sends the login to Apps Script, which checks it on the server. The public repo and the published page contain no login data (checked by the tests).
-- **Time-limited access:** After a correct login the phone gets a signed token that expires after `GALLERY_SESSION_HOURS` (default 24 h). Changing the user name or the password logs out everyone immediately, including phones that are already signed in. Guests can also sign out with "Abmelden".
-- **Guessing is slowed down:** After 30 wrong logins within 10 minutes the login is locked for everyone for a while, and each wrong attempt waits almost a second.
+- **Access code:** The gallery opens only with the `ACCESS_CODE` from the link (at least 10 characters). Anyone who has the link or a photo of the QR code poster can see all photos once the gallery is released. Keep that in mind before sharing the link outside the guest list.
+- **Time-limited token:** The page exchanges the code for a signed token that expires after `GALLERY_SESSION_HOURS` (default 24 h) and renews it automatically.
+- **Guessing is slowed down:** After 30 wrong codes within 10 minutes the gallery is locked for everyone for a while, and each wrong attempt waits almost a second.
 - **This folder only:** The server only returns photos and videos that sit directly in `FOLDER_ID` and are not in the trash. Other files in the Google account are unreachable, even with guessed IDs.
-- **Nothing becomes public:** The folder stays "Restricted". Images and videos are streamed through the script; guests never see Drive links or file names.
-- **Kill switch:** `GALLERY_ENABLED=false` closes the gallery immediately, also for signed-in guests.
+- **Nothing becomes public:** The folder stays "Restricted". Images and videos are streamed through the script; guests never see Drive links or file names. The page is excluded from search engines.
+- **Kill switch:** `GALLERY_ENABLED=false` closes the gallery immediately, also for guests who have it open.
+- **Emergency only:** Changing `ACCESS_CODE` locks everyone out at once, but it also invalidates the printed QR code.
 
 ### Setup
 
-1. In Apps Script: replace `Code.gs` with the new version. Optional, only for the fallback address: create an HTML file `gallery` and paste `src/gallery.html`.
-2. Add Script Properties ("Project settings" → "Script properties"):
+1. In Apps Script: replace `Code.gs` with the new version and create a new version of the existing deployment ("Manage deployments", pencil, "New version"). The address stays the same.
+2. Script Properties ("Project settings" → "Script properties"):
 
 | Name | Value | Note |
 | --- | --- | --- |
-| `GALLERY_ENABLED` | `true` | Gallery on or off, applies immediately |
-| `GALLERY_USER` | at least 3 characters, e.g. `gaeste` | Case is ignored |
-| `GALLERY_PASSWORD` | at least 10 characters | Case-sensitive. Must differ from `ACCESS_CODE`. |
-| `GALLERY_SESSION_HOURS` | `24` | optional, how long a phone stays signed in |
+| `GALLERY_ENABLED` | `true` / `false` | Shows or hides the gallery tab, applies immediately |
+| `GALLERY_SESSION_HOURS` | `24` | optional, how long a token stays valid |
 | `GALLERY_MAX_FILE_MB` | `300` | optional, larger videos cannot be played or saved in the gallery |
 | `GALLERY_RATE_LIMIT_PER_MIN` | `900` | optional, gallery calls per minute for all guests together |
 
-   `GALLERY_CODE` from an earlier version is no longer used; delete it.
-3. Run `testAuth`: it reports a missing or too short user name or password.
-4. Create a new version of the existing deployment ("Manage deployments", pencil, "New version"). The address stays the same, so nothing changes on GitHub.
-5. The gallery page itself is published by GitHub Actions on every push to `main` (built from `src/gallery.html` into `dist/galerie/`).
+   `GALLERY_CODE`, `GALLERY_USER` and `GALLERY_PASSWORD` from earlier versions are no longer used; delete them (`testAuth` reports them).
+3. The page itself is published by GitHub Actions on every push to `main`.
 
 ### Hiding photos
 
@@ -233,7 +229,7 @@ Move a file in Drive into a subfolder (e.g. "Ausgeblendet") or into the trash. I
 
 - **Speed:** Thumbnails come in batches and are cached for 6 hours. Videos are loaded through the script in 8 MB pieces; a 100 MB video needs roughly 30 seconds to 2 minutes before it plays, depending on the network.
 - **Corporate networks:** Some company networks delay every Apps Script answer by about 20 seconds (seen during testing). On mobile data the same calls take 1–2 seconds.
-- **Many guests at once:** Apps Script handles a limited number of simultaneous calls per account (about 30). The page sends at most two requests in parallel per guest and retries rejected calls automatically. With very many guests at the same time it can stall briefly.
+- **Many guests at once:** Apps Script handles a limited number of simultaneous calls per account (about 30). The page sends at most two gallery requests in parallel per guest and retries rejected calls automatically. With very many guests at the same time it can stall briefly.
 - **Quota:** Every thumbnail batch and every video piece counts against the daily `UrlFetchApp` limit (section 5).
 - **New uploads without a preview:** Drive needs a few minutes after an upload to create thumbnails, especially for videos and HEIC. Until then the tile shows "Vorschau folgt".
 - **Saving on iPhone:** Depending on the iOS version, "Original speichern" opens the file; it is then saved via "Share" → "Save to Photos".
@@ -241,13 +237,12 @@ Move a file in Drive into a subfolder (e.g. "Ausgeblendet") or into the trash. I
 
 ### Testing (about 15 minutes)
 
-- [ ] Open the gallery address: login form appears; a wrong password shows "Benutzername oder Passwort stimmt nicht."
-- [ ] Correct login: grid with thumbnails, newest first
-- [ ] Open a photo, swipe, "Original speichern" on iPhone and Android
-- [ ] Play a video
-- [ ] Reload: still signed in. "Abmelden": back to the login form
-- [ ] Change `GALLERY_PASSWORD`: a signed-in phone lands on the login form on its next action
-- [ ] `GALLERY_ENABLED=false`: the gallery is closed
+- [ ] `GALLERY_ENABLED=false`: the QR link shows the upload page without tabs
+- [ ] `GALLERY_ENABLED=true`: tabs "Hochladen" and "Galerie" appear; uploading still works
+- [ ] Gallery tab: grid with thumbnails, newest first; open a photo, swipe, "Original speichern" on iPhone and Android; play a video
+- [ ] Link with `#galerie` opens the gallery tab directly
+- [ ] `ENABLED=false`: the link shows only the gallery with "Der Upload ist beendet"
+- [ ] Both off: the link shows the closed notice
 
 ## 11. Variante B: Upload-Seite auf GitHub Pages
 
@@ -255,7 +250,7 @@ Move a file in Drive into a subfolder (e.g. "Ausgeblendet") or into the trash. I
 
 **Was gleich bleibt:** Script, Ordner, Script Properties und der `ACCESS_CODE`. Die alte Adresse `script.google.com/…/exec?k=…` funktioniert weiter, nur eben nicht bei mehreren Konten.
 
-**Was öffentlich ist:** Das Repo ist öffentlich, denn GitHub Pages braucht das im kostenlosen Konto. Darin stehen nur Code und Texte. Die Script-Adresse liegt als Repository-Secret `APPS_SCRIPT_URL` bei GitHub und wird erst beim Veröffentlichen eingesetzt. Auf der fertigen Seite ist sie sichtbar, weil der Browser sie aufrufen muss. Das ist unkritisch, denn ohne gültigen Code lehnt das Script jede Anfrage ab. `ACCESS_CODE`, `FOLDER_ID`, `GALLERY_USER`, `GALLERY_PASSWORD` und der Drive-Zugriff bleiben in Apps Script. Mit dem Upload-Code können Gäste nur hochladen. Ansehen geht nur über die Galerie mit Benutzername und Passwort (Abschnitt 10).
+**Was öffentlich ist:** Das Repo ist öffentlich, denn GitHub Pages braucht das im kostenlosen Konto. Darin stehen nur Code und Texte. Die Script-Adresse liegt als Repository-Secret `APPS_SCRIPT_URL` bei GitHub und wird erst beim Veröffentlichen eingesetzt. Auf der fertigen Seite ist sie sichtbar, weil der Browser sie aufrufen muss. Das ist unkritisch, denn ohne gültigen Code lehnt das Script jede Anfrage ab. `ACCESS_CODE`, `FOLDER_ID` und der Drive-Zugriff bleiben in Apps Script. Mit dem Code aus dem QR-Code können Gäste hochladen und, sobald `GALLERY_ENABLED=true` ist, die Galerie ansehen (Abschnitt 10). Löschen oder andere Drive-Dateien sehen geht nicht.
 
 **Schutz der Seite:** Eine Content-Security-Policy erlaubt nur Verbindungen zu Apps Script und zur Drive-Upload-Schnittstelle. `no-referrer` sorgt dafür, dass der Code aus der Adresse nicht an andere Seiten weitergegeben wird. Suchmaschinen sind ausgesperrt.
 
